@@ -10,7 +10,7 @@
   body{background:#14120f;display:flex;align-items:center;justify-content:center;
        font-family:"Segoe UI",system-ui,-apple-system,Roboto,Helvetica,Arial,sans-serif;
        color:#e8e6e1;overflow:hidden}
-  #stage{width:100vmin;height:100vmin;display:flex;flex-direction:column;gap:.7vmin;
+  #stage{width:100vw;height:100vh;height:100dvh;display:flex;flex-direction:column;gap:.7vmin;
          padding:1vmin;background:#26231f;position:relative;
          --sq-light:#ececd2;--sq-dark:#739552}
   .bar{display:flex;align-items:center;gap:1.2vmin;height:5.4vmin;padding:0 .4vmin}
@@ -23,7 +23,8 @@
   .captured{flex:1;text-align:right;white-space:nowrap;overflow:hidden;line-height:0}
   .capSvg{display:inline-block;width:2.9vmin;height:2.9vmin}
   .mat{font-size:2.3vmin;color:#cfccc2;min-width:5vmin;text-align:right}
-  #boardBox{position:relative;width:60vmin;height:60vmin;margin:0 auto;border-radius:1.2vmin;
+  #boardBox{position:relative;width:min(100%,calc(100dvh - 40vmin));aspect-ratio:1;
+            margin:auto;border-radius:1.2vmin;
             overflow:hidden;box-shadow:0 1vmin 3vmin rgba(0,0,0,.55);touch-action:none;flex:0 0 auto}
   .grid8{display:grid;grid-template-columns:repeat(8,1fr);grid-template-rows:repeat(8,1fr);width:100%;height:100%}
   .sq{position:relative;cursor:pointer}
@@ -59,6 +60,19 @@
   #themeChips{display:flex;flex:2.2;gap:.9vmin;align-items:center;justify-content:center;background:#3a372f;border-radius:1.1vmin;padding:.6vmin 0}
   .chip{width:3.9vmin;height:3.9vmin;border-radius:50%;border:.3vmin solid rgba(255,255,255,.25);cursor:pointer;padding:0}
   .chip.on{box-shadow:0 0 0 .5vmin #ffb300;border-color:transparent}
+  @media (min-aspect-ratio: 13/10){
+    #stage{display:grid;grid-template-columns:minmax(0,1fr) 46vmin;
+           grid-template-rows:auto auto auto auto 1fr auto;column-gap:1.4vmin}
+    #boardBox{grid-column:1;grid-row:1 / -1;width:min(100%,calc(100dvh - 4vmin));margin:auto 0 auto auto}
+    #stage{padding-bottom:2vmin}
+    #controls .btn{white-space:nowrap}
+    #topBar{grid-column:2;grid-row:1}
+    #puzzleBar{grid-column:2;grid-row:2}
+    #statusRow{grid-column:2;grid-row:3}
+    #botBar{grid-column:2;grid-row:4}
+    #controls{grid-column:2;grid-row:5;align-self:start}
+    #help{grid-column:2;grid-row:6}
+  }
   #help{height:2.8vmin;display:flex;align-items:center;justify-content:center;
         font-size:1.8vmin;color:#8f8b80;text-align:center}
   .overlay{position:absolute;inset:0;background:rgba(18,16,13,.92);z-index:10;
@@ -104,6 +118,7 @@
   #puzzleLabel{flex:1;font-size:2.3vmin;font-weight:700;color:#ffb300}
   #puzzleBar .btn{flex:0 0 auto;padding:1vmin 2.2vmin}
   .puzzling .captured,.puzzling .mat{visibility:hidden}
+  .puzzling #help{display:none}
   #puzzleList{flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:1vmin}
   #puzzleList .hrow{cursor:pointer}
   .overlay .big.alt{background:#3a372f}
@@ -112,11 +127,11 @@
   #welcomeText{font-size:3vmin;font-weight:700;color:#e8e6e1}
   #welcomeDay{font-size:3.8vmin;font-weight:800;color:#ffb300;text-align:center;letter-spacing:.03em}
   #welcomeFlames{display:flex;gap:1vmin;align-items:flex-end;justify-content:center;height:9.5vmin}
-  #welcomeFlames span{display:inline-block;animation:flick .65s ease-in-out infinite alternate}
+  #welcomeFlames span{display:inline-block;animation:flick 1.5s ease-out 1 both}
   #welcomeConfetti{position:absolute;inset:0;overflow:hidden;pointer-events:none}
-  .confetti{position:absolute;top:-3vmin;width:1.4vmin;height:2.3vmin;border-radius:.3vmin;opacity:0;animation:confettiFall 2.8s ease-in infinite}
+  .confetti{position:absolute;top:-3vmin;width:1.4vmin;height:2.3vmin;border-radius:.3vmin;opacity:0;animation:confettiFall 2.8s ease-in 1 both}
   @keyframes popIn{from{transform:scale(.4);opacity:0}to{transform:scale(1);opacity:1}}
-  @keyframes flick{from{transform:scale(1) rotate(-3deg)}to{transform:scale(1.16) rotate(3deg) translateY(-.5vmin)}}
+  @keyframes flick{0%{transform:scale(.5);opacity:0}25%{transform:scale(1.15) rotate(3deg)}50%{transform:scale(.95) rotate(-3deg) translateY(.2vmin)}75%{transform:scale(1.1) rotate(2deg) translateY(-.4vmin)}100%{transform:scale(1) rotate(0)}}
   @keyframes confettiFall{0%{transform:translateY(0) rotate(0deg);opacity:1}85%{opacity:1}100%{transform:translateY(62vmin) rotate(560deg);opacity:0}}
   #board.shaking{animation:boardShake .4s}
   @keyframes boardShake{0%,100%{transform:translateX(0)}20%{transform:translateX(-1.2vmin)}40%{transform:translateX(1.2vmin)}60%{transform:translateX(-.8vmin)}80%{transform:translateX(.8vmin)}}
@@ -124,7 +139,7 @@
 </head>
 <body>
 <div id="stage">
-  <div class="bar">
+  <div class="bar" id="topBar">
     <div class="avatar" id="topAvatar"></div>
     <div class="who"><span class="name" id="topName">Computer</span><span class="sub" id="topSub">Hard</span></div>
     <div class="captured" id="topCaptured"></div>
@@ -181,7 +196,7 @@
 
   <div id="statusRow"><div id="status">Your move</div><div id="streakChip"></div></div>
 
-  <div class="bar">
+  <div class="bar" id="botBar">
     <div class="avatar" id="botAvatar"></div>
     <div class="who"><span class="name">You</span><span class="sub" id="botSub">White</span></div>
     <div class="captured" id="botCaptured"></div>
