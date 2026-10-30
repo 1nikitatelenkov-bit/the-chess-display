@@ -61,11 +61,13 @@
   .chip{width:3.9vmin;height:3.9vmin;border-radius:50%;border:.3vmin solid rgba(255,255,255,.25);cursor:pointer;padding:0}
   .chip.on{box-shadow:0 0 0 .5vmin #ffb300;border-color:transparent}
   @media (min-aspect-ratio: 13/10){
-    #stage{display:grid;grid-template-columns:minmax(0,1fr) 46vmin;
+    #stage{display:grid;grid-template-columns:minmax(0,1fr) 54vmin;
            grid-template-rows:auto auto auto auto 1fr auto;column-gap:1.4vmin}
     #boardBox{grid-column:1;grid-row:1 / -1;width:min(100%,calc(100dvh - 4vmin));margin:auto 0 auto auto}
     #stage{padding-bottom:2vmin}
-    #controls .btn{white-space:nowrap}
+    #controls .btn{white-space:nowrap;min-width:0}
+    #themeChips .chip{width:3.2vmin;height:3.2vmin}
+    #themeChips{gap:.6vmin}
     #topBar{grid-column:2;grid-row:1}
     #puzzleBar{grid-column:2;grid-row:2}
     #statusRow{grid-column:2;grid-row:3}
