@@ -561,9 +561,13 @@ function insufficientMaterial(bd){
 }
 
 /* ================= Engine additions: FEN export + move analysis ================= */
-function isMatePos(st){ var l = legalMoves(st); return l.length === 0 && inCheck(st, st.turn); }
-function forceMateIn(st, n, memo){
-  /* True if the side to move can force checkmate within n of its own moves. */
+function mateDistance(st, maxN, budget){ var memo = {}; for (var d = 1; d <= maxN; d++) if (forceMateIn(st, d, memo, budget)) return d; return 0; }
+  function isMatePos(st){ var l = legalMoves(st); return l.length === 0 && inCheck(st, st.turn); }
+function forceMateIn(st, n, memo, budget){
+  /* True if the side to move can force checkmate within n of its own moves.
+     Optional budget {nodes} caps the search (used by the puzzle generator:
+     running out returns false, i.e. "no mate proven", never a false mate). */
+  if (budget && --budget.nodes < 0) return false;
   var key = stateToFEN(st) + '|' + n;
   if (memo[key] !== undefined) return memo[key];
   var moves = legalMoves(st), res = false;
@@ -575,7 +579,7 @@ function forceMateIn(st, n, memo){
       if (replies.length){
         var all = true;
         for (var j = 0; j < replies.length; j++){
-          if (!forceMateIn(makeMove(s2, replies[j]), n - 1, memo)){ all = false; break; }
+          if (!forceMateIn(makeMove(s2, replies[j]), n - 1, memo, budget)){ all = false; break; }
         }
         if (all) res = true;
       }
@@ -739,7 +743,6 @@ if (typeof document !== 'undefined'){
   var resignOpen = false;
   var rev = null;
   var puzzleMode = false;
-  var puzzleIdx = 0;
   var puzzleMovesLeft = 0;
   var welcomeOpen = false;
 
@@ -1189,7 +1192,7 @@ if (typeof document !== 'undefined'){
     if (puzzleMode) exitPuzzle(); else newGame();
   });
   document.getElementById('undoBtn').addEventListener('click', function(){
-    if (puzzleMode){ startPuzzle(puzzleIdx); return; }
+    if (puzzleMode){ if (currentPuzzle) startPuzzleDeal(currentPuzzle); return; }
     if (thinking || gameLog.length <= 1) return;
     gameLog.pop();
     if (gameLog.length > 1 && gameLog[gameLog.length - 1].state.turn !== playerColor) gameLog.pop();
@@ -1325,12 +1328,14 @@ if (typeof document !== 'undefined'){
     render();
   });
 
-  /* ---- Puzzles -------------------------------------------------------
-     Every position below was machine-verified with forceMateIn(): the
-     stated "mate in N" is the true forced-mate distance. A player move
-     counts as correct only if it mates now or keeps a forced mate
-     within the remaining moves against every defense. */
-  var PUZZLES = [
+  /* ---- Puzzles: endless, generated + solver-verified -----------------
+     Puzzles are generated on the fly from mating-pattern templates and
+     every candidate is checked with forceMateIn() before it is served,
+     so each dealt puzzle is a guaranteed forced mate. Board symmetries
+     (flips) and color swaps multiply variety. The original hand-picked
+     set stays as an instant fallback. Progress = total solved count +
+     a list of recently served positions (no repeats). */
+  var PUZZLE_SEEDS = [
     { fen: '6k1/5ppp/8/8/8/8/8/R5K1 w - - 0 1', mateIn: 1 },
     { fen: '6k1/5ppp/8/8/8/8/3Q4/6K1 w - - 0 1', mateIn: 1 },
     { fen: 'r5k1/8/8/8/8/8/5PPP/6K1 b - - 0 1', mateIn: 1 },
@@ -1342,16 +1347,20 @@ if (typeof document !== 'undefined'){
     { fen: '7k/8/8/5K2/8/8/8/3Q4 w - - 0 1', mateIn: 2 },
     { fen: '8/8/8/8/1k6/8/R7/1R4K1 w - - 0 1', mateIn: 3 }
   ];
-  var PUZZLE_KEY = 'glasschess.puzzles.v1';
-  function loadSolved(){
+  var PZ_KEY = 'glasschess.puzzles.v2';
+  function loadPz(){
     try{
-      var s = JSON.parse(localStorage.getItem(PUZZLE_KEY) || '[]');
-      if (s && s.length !== undefined) return s;
+      var s = JSON.parse(localStorage.getItem(PZ_KEY) || 'null');
+      if (s && typeof s.count === 'number') return { count: s.count, seen: s.seen || [] };
     }catch(e){}
-    return [];
+    try{ /* migrate the old fixed-list progress into the solved count */
+      var old = JSON.parse(localStorage.getItem('glasschess.puzzles.v1') || '[]');
+      if (old && old.length) return { count: old.length, seen: [] };
+    }catch(e){}
+    return { count: 0, seen: [] };
   }
-  function saveSolved(s){
-    try{ localStorage.setItem(PUZZLE_KEY, JSON.stringify(s)); }catch(e){}
+  function savePz(s){
+    try{ localStorage.setItem(PZ_KEY, JSON.stringify(s)); }catch(e){}
   }
   function puzzleMoveCorrect(st, m, movesLeft){
     var s2 = makeMove(st, m);
@@ -1369,15 +1378,138 @@ if (typeof document !== 'undefined'){
       if (puzzleMoveCorrect(st, moves[i], movesLeft)) return moves[i];
     return null;
   }
-  function updatePuzzleBar(){
-    var pz = PUZZLES[puzzleIdx];
-    document.getElementById('puzzleLabel').textContent =
-      '\uD83E\uDDE9 Puzzle ' + (puzzleIdx + 1) + ' of ' + PUZZLES.length + ' · Mate in ' + pz.mateIn +
-      (puzzleMovesLeft < pz.mateIn ? ' · ' + puzzleMovesLeft + ' to go' : '');
+
+  /* ---- Generator ----
+     Canonical frame: black king defends near the top edge, white mates.
+     A random symmetry / color swap is applied to the verified position
+     before it is dealt, which preserves the mate exactly. */
+  function pzRand(n){ return Math.floor(Math.random() * n); }
+  function pzPick(arr){ return arr[pzRand(arr.length)]; }
+  function pzEmptySq(b, tries){
+    for (var t = 0; t < (tries || 40); t++){
+      var s = pzRand(64);
+      if (!b[s]) return s;
+    }
+    return -1;
   }
-  function startPuzzle(i){
-    puzzleIdx = i;
-    var pz = PUZZLES[i];
+  function buildCandidate(){
+    var b = new Array(64).fill(null);
+    var dk = pzPick([0, 1, 2, 7, 8, 9, 15, 5, 13]); /* a8 b8 c8 h8 a7 b7 h7 f8 f7 */
+    b[dk] = 'k';
+    var dr = (dk >> 3), df = (dk & 7);
+    /* defender pawns on some of the squares in front of the king */
+    for (var df2 = -1; df2 <= 1; df2++){
+      var f = df + df2, r = dr + 1;
+      if (f < 0 || f > 7 || r > 7 || Math.random() < 0.35) continue;
+      var sq2 = (r * 8 + f);
+      if (!b[sq2]) b[sq2] = 'p';
+    }
+    /* attacking king two squares away (never adjacent, never sharing) */
+    var akPlaced = false;
+    for (var t1 = 0; t1 < 60 && !akPlaced; t1++){
+      var ar = Math.max(0, Math.min(7, dr + pzPick([-2, -1, 0, 1, 2]))), af = Math.max(0, Math.min(7, df + pzPick([-2, -1, 0, 1, 2])));
+      if (Math.max(Math.abs(ar - dr), Math.abs(af - df)) !== 2) continue;
+      var asq = (ar * 8 + af);
+      if (b[asq]) continue;
+      b[asq] = 'K'; akPlaced = true;
+    }
+    if (!akPlaced) return null;
+    var patterns = [['Q'], ['R'], ['Q'], ['R','R'], ['Q','R'], ['Q','B'], ['Q','N'], ['R','B'], ['B','N'], ['R']];
+    var pat = pzPick(patterns);
+    for (var pi = 0; pi < pat.length; pi++){
+      var ps = pzEmptySq(b);
+      if (ps < 0) return null;
+      b[ps] = pat[pi];
+    }
+    return { board: b, turn: 'w', castling: '-', ep: -1 };
+  }
+  function stateToFEN(st){
+    var rows = [];
+    for (var r = 0; r < 8; r++){
+      var row = '', empty = 0;
+      for (var f = 0; f < 8; f++){
+        var p = st.board[(r * 8 + f)];
+        if (!p){ empty++; continue; }
+        if (empty){ row += empty; empty = 0; }
+        row += p;
+      }
+      if (empty) row += empty;
+      rows.push(row);
+    }
+    return rows.join('/') + ' ' + st.turn + ' - - 0 1';
+  }
+  function kingEscapes(st, dkSq){
+    var b = st.board, esc = 0;
+    var dr = dkSq >> 3, df = dkSq & 7;
+    for (var i = 0; i < 8; i++){
+      var nr = dr + KING_D[i][0], nf = df + KING_D[i][1];
+      if (nr < 0 || nr > 7 || nf < 0 || nf > 7) continue;
+      var sq = nr * 8 + nf, p = b[sq];
+      if (p && p === p.toLowerCase()) continue; /* blocked by its own piece */
+      if (attacked(b, sq, 'w')) continue;
+      esc++;
+    }
+    return esc;
+  }
+  function validateCandidate(st, maxD){
+    if (inCheck(st, 'b')) return 0; /* defender already in check: illegal start */
+    var moves = legalMoves(st);
+    if (!moves.length) return 0;
+    if (kingEscapes(st, st.board.indexOf('k')) > 4) return 0; /* no mate net around an open king */
+    var hasCheck = false;
+    for (var i = 0; i < moves.length; i++)
+      if (inCheck(makeMove(st, moves[i]), 'b')){ hasCheck = true; break; }
+    if (!hasCheck) return 0;
+    var d = mateDistance(st, maxD, { nodes: 15000 });
+    if (!d) return 0;
+    var keys = 0; /* keep puzzles focused: at most 4 winning first moves */
+    for (var j = 0; j < moves.length; j++)
+      if (puzzleMoveCorrect(st, moves[j], d) && ++keys > 4) return 0;
+    return d;
+  }
+  function transformState(st){
+    /* Only pawn-safe symmetries: files may flip freely, but ranks may
+       flip only together with a color swap — otherwise the defender's
+       pawns would attack toward the king instead of away from it and
+       the "verified" mate would silently change. */
+    var mode = pzRand(4); /* 0 identity · 1 flip files · 2 swap + flip ranks · 3 swap + flip both */
+    var swap = mode >= 2;
+    var flipF = (mode % 2 === 1);
+    var b = new Array(64).fill(null);
+    for (var i = 0; i < 64; i++){
+      var p = st.board[i];
+      if (!p) continue;
+      var r = (i >> 3), f = (i & 7);
+      var nr = swap ? 7 - r : r;
+      var nf = flipF ? 7 - f : f;
+      if (swap) p = (p === p.toUpperCase()) ? p.toLowerCase() : p.toUpperCase();
+      b[(nr * 8 + nf)] = p;
+    }
+    return { board: b, turn: swap ? (st.turn === 'w' ? 'b' : 'w') : st.turn, castling: '-', ep: -1 };
+  }
+  var pzDealNo = 0;
+  function generatePuzzle(seen){
+    pzDealNo++;
+    for (var a = 0; a < 40; a++){
+      var raw = buildCandidate();
+      if (!raw) continue;
+      var st = parseFEN(stateToFEN(raw)); /* normalize into a full engine state */
+      /* alternate deals lead with mate-in-3 attempts so deeper puzzles appear regularly */
+      var maxD = (pzDealNo % 2 === 0) ? (a < 12 ? 3 : 2) : (a < 28 ? 2 : 3);
+      var d = validateCandidate(st, maxD);
+      if (!d) continue;
+      var dealt = transformState(st);
+      var fen = stateToFEN(dealt);
+      if (seen.indexOf(fen) >= 0) continue;
+      return { fen: fen, mateIn: d };
+    }
+    return null;
+  }
+
+  /* ---- Dealing + play ---- */
+  var currentPuzzle = null; /* {fen, mateIn} */
+  function startPuzzleDeal(pz){
+    currentPuzzle = pz;
     var st = parseFEN(pz.fen);
     puzzleMode = true;
     puzzleMovesLeft = pz.mateIn;
@@ -1399,10 +1531,34 @@ if (typeof document !== 'undefined'){
     updatePuzzleBar();
     refresh();
     document.getElementById('status').textContent =
-      'Puzzle ' + (i + 1) + ' — ' + (st.turn === 'w' ? 'White' : 'Black') + ' to play and mate in ' + pz.mateIn;
+      (st.turn === 'w' ? 'White' : 'Black') + ' to play and mate in ' + pz.mateIn;
+    var pzd = loadPz();
+    if (pzd.seen.indexOf(pz.fen) < 0){ pzd.seen.push(pz.fen); if (pzd.seen.length > 60) pzd.seen = pzd.seen.slice(-60); savePz(pzd); }
+  }
+  function dealRandomPuzzle(){
+    if (welcomeOpen) return;
+    document.getElementById('status').textContent = 'Dealing a puzzle\u2026';
+    setTimeout(function(){
+      var pzd = loadPz();
+      var pz = generatePuzzle(pzd.seen);
+      if (!pz){ /* generator fallback: a fresh pick from the verified seeds */
+        var fresh = PUZZLE_SEEDS.filter(function(s){ return pzd.seen.indexOf(s.fen) < 0; });
+        pz = pzPick(fresh.length ? fresh : PUZZLE_SEEDS);
+      }
+      startPuzzleDeal(pz);
+    }, 30);
+  }
+  function updatePuzzleBar(){
+    var pz = currentPuzzle;
+    if (!pz) return;
+    document.getElementById('puzzleLabel').textContent =
+      '\uD83E\uDDE9 Mate in ' + pz.mateIn +
+      (puzzleMovesLeft < pz.mateIn ? ' · ' + puzzleMovesLeft + ' to go' : '') +
+      ' · Solved ' + loadPz().count;
   }
   function exitPuzzle(){
     puzzleMode = false;
+    currentPuzzle = null;
     document.getElementById('stage').classList.remove('puzzling');
     document.getElementById('puzzleBar').style.display = 'none';
     document.getElementById('puzzleWin').style.display = 'none';
@@ -1454,55 +1610,28 @@ if (typeof document !== 'undefined'){
   }
   function onPuzzleSolved(){
     locked = true;
-    var solved = loadSolved();
-    if (solved.indexOf(puzzleIdx) < 0){ solved.push(puzzleIdx); saveSolved(solved); }
-    document.getElementById('puzzleWinText').textContent = solved.length >= PUZZLES.length
-      ? 'You solved every puzzle. Champion!'
-      : 'Solved ' + solved.length + ' of ' + PUZZLES.length + ' puzzles.';
+    var pzd = loadPz();
+    pzd.count++;
+    savePz(pzd);
+    document.getElementById('puzzleWinText').textContent =
+      'You have solved ' + pzd.count + ' puzzle' + (pzd.count === 1 ? '' : 's') + '. The next one is brand new.';
     document.getElementById('puzzleWin').style.display = 'flex';
     document.getElementById('status').textContent = 'Puzzle solved!';
+    updatePuzzleBar();
     beep(784, 0.1, 'sine', 0.04);
     setTimeout(function(){ beep(988, 0.1, 'sine', 0.04); }, 110);
     setTimeout(function(){ beep(1318, 0.16, 'sine', 0.045); }, 220);
   }
-  function openPuzzles(){
-    sheetOpen = 'puzzles';
-    document.getElementById('puzzleSheet').style.display = 'flex';
-    renderPuzzleList();
-  }
-  function renderPuzzleList(){
-    var solved = loadSolved();
-    var list = document.getElementById('puzzleList');
-    list.innerHTML = '';
-    for (var i = 0; i < PUZZLES.length; i++){
-      (function(idx){
-        var pz = PUZZLES[idx];
-        var st = parseFEN(pz.fen);
-        var done = solved.indexOf(idx) >= 0;
-        var row = document.createElement('div');
-        row.className = 'hrow';
-        row.innerHTML = '<div class="hmain"><div class="htitle">Puzzle ' + (idx + 1) + '</div>' +
-          '<div class="hsub">Mate in ' + pz.mateIn + ' · ' + (st.turn === 'w' ? 'White' : 'Black') + ' to play</div></div>' +
-          (done ? '<span class="cls-best" style="font-size:3vmin">\u2713</span>'
-                : '<span style="color:#a49f92;font-size:3vmin">\u203A</span>');
-        row.addEventListener('click', function(){ startPuzzle(idx); });
-        list.appendChild(row);
-      })(i);
-    }
-    if (!PUZZLES.length)
-      list.innerHTML = '<div class="hempty">No puzzles yet.</div>';
-  }
-  document.getElementById('puzzlesBtn').addEventListener('click', openPuzzles);
-  document.getElementById('puzzleClose').addEventListener('click', closeSheets);
+  document.getElementById('puzzlesBtn').addEventListener('click', dealRandomPuzzle);
   document.getElementById('puzzleRestart').addEventListener('click', function(){
-    if (puzzleMode) startPuzzle(puzzleIdx);
+    if (puzzleMode && currentPuzzle) startPuzzleDeal(currentPuzzle);
   });
   document.getElementById('puzzleExit').addEventListener('click', function(){
     if (puzzleMode) exitPuzzle();
   });
   document.getElementById('puzzleNext').addEventListener('click', function(){
     document.getElementById('puzzleWin').style.display = 'none';
-    startPuzzle((puzzleIdx + 1) % PUZZLES.length);
+    dealRandomPuzzle();
   });
   document.getElementById('puzzleWinExit').addEventListener('click', function(){
     if (puzzleMode) exitPuzzle();
