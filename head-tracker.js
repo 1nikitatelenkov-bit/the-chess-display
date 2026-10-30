@@ -38,8 +38,10 @@ export class HeadTracker {
     this.nodLockUntil = 0;
     this.upSince = 0;
     this.upArmed = true;
+    this.downSince = 0;
+    this.downArmed = true;
     this.gotData = false;
-    this.cool = { 'nod-yes': 0, 'shake-no': 0, 'look-up': 0 };
+    this.cool = { 'nod-yes': 0, 'shake-no': 0, 'look-up': 0, 'look-down': 0 };
     this._handler = (e) => this._sample(e);
   }
 
@@ -126,6 +128,20 @@ export class HeadTracker {
     } else {
       this.upSince = 0;
       if (LOOK_UP_SIGN * pitch < 8) this.upArmed = true;
+    }
+
+    // look-down: head held down (opposite of look-up) for >=450ms.
+    if (LOOK_UP_SIGN * pitch <= -20) {
+      if (this.downSince === 0) this.downSince = now;
+      else if (this.downArmed && now - this.downSince >= 450) {
+        this._emit('look-down');
+        this.downArmed = false;
+        this.nodStart = 0;   // a look-down is not also a nod
+        this.nodLockUntil = now + 1200;
+      }
+    } else {
+      this.downSince = 0;
+      if (LOOK_UP_SIGN * pitch > -8) this.downArmed = true;
     }
 
     // shake-no: yaw swings >=14deg to one side, then to the other,
