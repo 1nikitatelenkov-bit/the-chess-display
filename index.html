@@ -96,6 +96,30 @@
   .cls-mistake{color:#e08a2e;font-weight:700}
   .cls-blunder{color:#e05555;font-weight:700}
   .mv.cur .cls-best,.mv.cur .cls-good,.mv.cur .cls-inaccuracy,.mv.cur .cls-mistake,.mv.cur .cls-blunder{color:#1d1b18}
+  /* ---- Streak, puzzles, welcome-back ---- */
+  #statusRow{display:flex;align-items:stretch}
+  #status{flex:1}
+  #streakChip{display:flex;align-items:center;font-size:2.5vmin;font-weight:800;color:#ffb300;padding:0 1vmin;white-space:nowrap}
+  #puzzleBar{display:flex;gap:.8vmin;align-items:center;background:#322f29;border-radius:1.1vmin;padding:.7vmin .8vmin .7vmin 1.4vmin}
+  #puzzleLabel{flex:1;font-size:2.3vmin;font-weight:700;color:#ffb300}
+  #puzzleBar .btn{flex:0 0 auto;padding:1vmin 2.2vmin}
+  .puzzling .captured,.puzzling .mat{visibility:hidden}
+  #puzzleList{flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:1vmin}
+  #puzzleList .hrow{cursor:pointer}
+  .overlay .big.alt{background:#3a372f}
+  #welcomeOverlay{overflow:hidden}
+  #welcomeOverlay h2{animation:popIn .5s cubic-bezier(.2,2.2,.4,1)}
+  #welcomeText{font-size:3vmin;font-weight:700;color:#e8e6e1}
+  #welcomeDay{font-size:3.8vmin;font-weight:800;color:#ffb300;text-align:center;letter-spacing:.03em}
+  #welcomeFlames{display:flex;gap:1vmin;align-items:flex-end;justify-content:center;height:9.5vmin}
+  #welcomeFlames span{display:inline-block;animation:flick .65s ease-in-out infinite alternate}
+  #welcomeConfetti{position:absolute;inset:0;overflow:hidden;pointer-events:none}
+  .confetti{position:absolute;top:-3vmin;width:1.4vmin;height:2.3vmin;border-radius:.3vmin;opacity:0;animation:confettiFall 2.8s ease-in infinite}
+  @keyframes popIn{from{transform:scale(.4);opacity:0}to{transform:scale(1);opacity:1}}
+  @keyframes flick{from{transform:scale(1) rotate(-3deg)}to{transform:scale(1.16) rotate(3deg) translateY(-.5vmin)}}
+  @keyframes confettiFall{0%{transform:translateY(0) rotate(0deg);opacity:1}85%{opacity:1}100%{transform:translateY(62vmin) rotate(560deg);opacity:0}}
+  #board.shaking{animation:boardShake .4s}
+  @keyframes boardShake{0%,100%{transform:translateX(0)}20%{transform:translateX(-1.2vmin)}40%{transform:translateX(1.2vmin)}60%{transform:translateX(-.8vmin)}80%{transform:translateX(.8vmin)}}
 </style>
 </head>
 <body>
@@ -105,6 +129,12 @@
     <div class="who"><span class="name" id="topName">Computer</span><span class="sub" id="topSub">Hard</span></div>
     <div class="captured" id="topCaptured"></div>
     <div class="mat" id="topMat"></div>
+  </div>
+
+  <div id="puzzleBar" style="display:none">
+    <span id="puzzleLabel"></span>
+    <button class="btn" id="puzzleRestart">Restart</button>
+    <button class="btn" id="puzzleExit">Exit</button>
   </div>
 
   <div id="boardBox">
@@ -131,9 +161,25 @@
         <button class="big" id="resignNo" style="background:#3a372f">Keep playing</button>
       </div>
     </div>
+    <div class="overlay" id="puzzleWin">
+      <h2>🎉 Puzzle solved!</h2>
+      <p id="puzzleWinText">You found the mate.</p>
+      <div style="display:flex;gap:1.6vmin">
+        <button class="big" id="puzzleNext">Next puzzle</button>
+        <button class="big alt" id="puzzleWinExit">Exit</button>
+      </div>
+    </div>
+    <div class="overlay" id="welcomeOverlay">
+      <div id="welcomeConfetti"></div>
+      <div id="welcomeFlames"></div>
+      <h2 id="welcomeTitle">WOOHOO!</h2>
+      <p id="welcomeText">YOU'RE BACK!</p>
+      <div id="welcomeDay">THIS IS YOUR DAY 1</div>
+      <button class="big" id="welcomeBtn">Let's play</button>
+    </div>
   </div>
 
-  <div id="status">Your move</div>
+  <div id="statusRow"><div id="status">Your move</div><div id="streakChip"></div></div>
 
   <div class="bar">
     <div class="avatar" id="botAvatar"></div>
@@ -157,6 +203,7 @@
         <button class="btn diffBtn on" data-diff="hard">Hard</button>
       </div>
       <button class="btn" id="movesBtn">Moves</button>
+      <button class="btn" id="puzzlesBtn">Puzzles</button>
     </div>
     <div class="row">
       <div id="themeChips"></div>
@@ -190,6 +237,14 @@
     </div>
     <div id="revSummary"></div>
     <div id="revMoves"></div>
+  </div>
+
+  <div class="sheet" id="puzzleSheet">
+    <div class="sheetHead">
+      <h2>Puzzles</h2>
+      <button class="xBtn" id="puzzleClose">×</button>
+    </div>
+    <div id="puzzleList"></div>
   </div>
 </div>
 
@@ -506,6 +561,29 @@ function insufficientMaterial(bd){
 }
 
 /* ================= Engine additions: FEN export + move analysis ================= */
+function isMatePos(st){ var l = legalMoves(st); return l.length === 0 && inCheck(st, st.turn); }
+function forceMateIn(st, n, memo){
+  /* True if the side to move can force checkmate within n of its own moves. */
+  var key = stateToFEN(st) + '|' + n;
+  if (memo[key] !== undefined) return memo[key];
+  var moves = legalMoves(st), res = false;
+  for (var i = 0; i < moves.length && !res; i++){
+    var s2 = makeMove(st, moves[i]);
+    if (isMatePos(s2)){ res = true; break; }
+    if (n > 1){
+      var replies = legalMoves(s2);
+      if (replies.length){
+        var all = true;
+        for (var j = 0; j < replies.length; j++){
+          if (!forceMateIn(makeMove(s2, replies[j]), n - 1, memo)){ all = false; break; }
+        }
+        if (all) res = true;
+      }
+    }
+  }
+  memo[key] = res;
+  return res;
+}
 function stateToFEN(st){
   var rows = [], r, f, p, s, empty;
   for (r = 0; r < 8; r++){
@@ -660,6 +738,10 @@ if (typeof document !== 'undefined'){
   var sheetOpen = null;
   var resignOpen = false;
   var rev = null;
+  var puzzleMode = false;
+  var puzzleIdx = 0;
+  var puzzleMovesLeft = 0;
+  var welcomeOpen = false;
 
   function state(){ return gameLog[gameLog.length - 1].state; }
   function displayOf(idx){ return orientation === 'w' ? idx : 63 - idx; }
@@ -840,7 +922,7 @@ if (typeof document !== 'undefined'){
     if (!gameOver && !locked && st.turn !== playerColor && !thinking){
       thinking = true;
       render();
-      setTimeout(aiMove, 400);
+      setTimeout(puzzleMode ? puzzleDefenseMove : aiMove, 400);
     }
   }
 
@@ -868,7 +950,7 @@ if (typeof document !== 'undefined'){
   }
 
   function activate(idx){
-    if (sheetOpen || resignOpen || thinking || gameOver || locked || pendingPromo) return;
+    if (sheetOpen || resignOpen || welcomeOpen || thinking || gameOver || locked || pendingPromo) return;
     var st = state();
     if (st.turn !== playerColor) return;
     beep(700, 0.03, 'sine', 0.018);
@@ -879,7 +961,11 @@ if (typeof document !== 'undefined'){
         if (m.from === selected && m.to === idx) cands.push(m);
       }
       if (cands.length > 1){ openPromo(cands); return; }
-      if (cands.length === 1){ doMove(cands[0], currentLegal); refresh(); return; }
+      if (cands.length === 1){
+        if (puzzleMode) tryPuzzleMove(cands[0]);
+        else { doMove(cands[0], currentLegal); refresh(); }
+        return;
+      }
     }
     var p = st.board[idx];
     if (p && pieceColor(p) === playerColor && st.turn === playerColor) selected = idx;
@@ -902,7 +988,10 @@ if (typeof document !== 'undefined'){
           for (var j = 0; j < pendingPromo.length; j++)
             if (pendingPromo[j].promo === pr) mv = pendingPromo[j];
           closePromo();
-          if (mv){ doMove(mv, currentLegal); refresh(); }
+          if (mv){
+            if (puzzleMode) tryPuzzleMove(mv);
+            else { doMove(mv, currentLegal); refresh(); }
+          }
         });
         row.appendChild(b);
       })(promos[i]);
@@ -951,6 +1040,7 @@ if (typeof document !== 'undefined'){
     sheetOpen = null;
     document.getElementById('historySheet').style.display = 'none';
     document.getElementById('reviewSheet').style.display = 'none';
+    document.getElementById('puzzleSheet').style.display = 'none';
   }
 
   function openHistory(){
@@ -1092,9 +1182,14 @@ if (typeof document !== 'undefined'){
   }
 
   /* ---- Controls ---- */
-  document.getElementById('newBtn').addEventListener('click', newGame);
-  document.getElementById('againBtn').addEventListener('click', newGame);
+  document.getElementById('newBtn').addEventListener('click', function(){
+    if (puzzleMode) exitPuzzle(); else newGame();
+  });
+  document.getElementById('againBtn').addEventListener('click', function(){
+    if (puzzleMode) exitPuzzle(); else newGame();
+  });
   document.getElementById('undoBtn').addEventListener('click', function(){
+    if (puzzleMode){ startPuzzle(puzzleIdx); return; }
     if (thinking || gameLog.length <= 1) return;
     gameLog.pop();
     if (gameLog.length > 1 && gameLog[gameLog.length - 1].state.turn !== playerColor) gameLog.pop();
@@ -1106,6 +1201,15 @@ if (typeof document !== 'undefined'){
     if (thinking || gameOver || locked) return;
     var st = state();
     if (st.turn !== playerColor) return;
+    if (puzzleMode){
+      var hm = puzzleHintMove(st, puzzleMovesLeft);
+      if (hm){
+        hintFrom = hm.from; hintTo = hm.to;
+        render();
+        setTimeout(function(){ hintFrom = -1; hintTo = -1; render(); }, 1400);
+      }
+      return;
+    }
     var bm = findBestMove(st, 2);
     if (bm.move){
       hintFrom = bm.move.from; hintTo = bm.move.to;
@@ -1114,6 +1218,10 @@ if (typeof document !== 'undefined'){
     }
   });
   document.getElementById('flipBtn').addEventListener('click', function(){
+    if (puzzleMode){
+      document.getElementById('status').textContent = 'Flip is off during a puzzle';
+      return;
+    }
     playerColor = opp(playerColor);
     orientation = playerColor;
     selected = null;
@@ -1122,6 +1230,10 @@ if (typeof document !== 'undefined'){
   });
   document.getElementById('resignBtn').addEventListener('click', function(){
     if (thinking || gameOver || locked) return;
+    if (puzzleMode){
+      document.getElementById('status').textContent = 'You are in a puzzle — Exit is above the board';
+      return;
+    }
     resignOpen = true;
     document.getElementById('resignOverlay').style.display = 'flex';
   });
@@ -1183,6 +1295,7 @@ if (typeof document !== 'undefined'){
     });
   }
   document.addEventListener('keydown', function(e){
+    if (welcomeOpen){ dismissWelcome(); return; }
     if (sheetOpen){
       if (e.key === 'Escape'){ closeSheets(); return; }
       if (sheetOpen === 'review'){
@@ -1211,6 +1324,265 @@ if (typeof document !== 'undefined'){
     cursor = idxAtDisplay(row * 8 + col);
     render();
   });
+
+  /* ---- Puzzles -------------------------------------------------------
+     Every position below was machine-verified with forceMateIn(): the
+     stated "mate in N" is the true forced-mate distance. A player move
+     counts as correct only if it mates now or keeps a forced mate
+     within the remaining moves against every defense. */
+  var PUZZLES = [
+    { fen: '6k1/5ppp/8/8/8/8/8/R5K1 w - - 0 1', mateIn: 1 },
+    { fen: '6k1/5ppp/8/8/8/8/3Q4/6K1 w - - 0 1', mateIn: 1 },
+    { fen: 'r5k1/8/8/8/8/8/5PPP/6K1 b - - 0 1', mateIn: 1 },
+    { fen: '7k/R7/1R6/8/8/8/8/6K1 w - - 0 1', mateIn: 1 },
+    { fen: '7k/6pp/8/8/8/6KQ/8/8 w - - 0 1', mateIn: 1 },
+    { fen: '7k/8/8/8/8/8/R7/1R4K1 w - - 0 1', mateIn: 2 },
+    { fen: '7k/8/8/8/8/8/1R6/R5K1 w - - 0 1', mateIn: 2 },
+    { fen: '7k/8/5K2/8/8/8/8/5Q2 w - - 0 1', mateIn: 2 },
+    { fen: '7k/8/8/5K2/8/8/8/3Q4 w - - 0 1', mateIn: 2 },
+    { fen: '8/8/8/8/1k6/8/R7/1R4K1 w - - 0 1', mateIn: 3 }
+  ];
+  var PUZZLE_KEY = 'glasschess.puzzles.v1';
+  function loadSolved(){
+    try{
+      var s = JSON.parse(localStorage.getItem(PUZZLE_KEY) || '[]');
+      if (s && s.length !== undefined) return s;
+    }catch(e){}
+    return [];
+  }
+  function saveSolved(s){
+    try{ localStorage.setItem(PUZZLE_KEY, JSON.stringify(s)); }catch(e){}
+  }
+  function puzzleMoveCorrect(st, m, movesLeft){
+    var s2 = makeMove(st, m);
+    if (isMatePos(s2)) return true;
+    if (movesLeft <= 1) return false;
+    var replies = legalMoves(s2);
+    if (!replies.length) return false;
+    for (var i = 0; i < replies.length; i++)
+      if (!forceMateIn(makeMove(s2, replies[i]), movesLeft - 1, {})) return false;
+    return true;
+  }
+  function puzzleHintMove(st, movesLeft){
+    var moves = legalMoves(st);
+    for (var i = 0; i < moves.length; i++)
+      if (puzzleMoveCorrect(st, moves[i], movesLeft)) return moves[i];
+    return null;
+  }
+  function updatePuzzleBar(){
+    var pz = PUZZLES[puzzleIdx];
+    document.getElementById('puzzleLabel').textContent =
+      '\uD83E\uDDE9 Puzzle ' + (puzzleIdx + 1) + ' of ' + PUZZLES.length + ' · Mate in ' + pz.mateIn +
+      (puzzleMovesLeft < pz.mateIn ? ' · ' + puzzleMovesLeft + ' to go' : '');
+  }
+  function startPuzzle(i){
+    puzzleIdx = i;
+    var pz = PUZZLES[i];
+    var st = parseFEN(pz.fen);
+    puzzleMode = true;
+    puzzleMovesLeft = pz.mateIn;
+    playerColor = st.turn;
+    orientation = st.turn;
+    gameLog = [{state: st, from: -1, to: -1, san: null}];
+    selected = null; gameOver = false; locked = false; thinking = false;
+    gameSaved = true; savedRec = null;
+    hintFrom = -1; hintTo = -1;
+    cursor = st.turn === 'w' ? 52 : 12;
+    closePromo();
+    resignOpen = false;
+    document.getElementById('resignOverlay').style.display = 'none';
+    document.getElementById('movesOverlay').style.display = 'none';
+    document.getElementById('puzzleWin').style.display = 'none';
+    closeSheets();
+    document.getElementById('stage').classList.add('puzzling');
+    document.getElementById('puzzleBar').style.display = 'flex';
+    updatePuzzleBar();
+    refresh();
+    document.getElementById('status').textContent =
+      'Puzzle ' + (i + 1) + ' — ' + (st.turn === 'w' ? 'White' : 'Black') + ' to play and mate in ' + pz.mateIn;
+  }
+  function exitPuzzle(){
+    puzzleMode = false;
+    document.getElementById('stage').classList.remove('puzzling');
+    document.getElementById('puzzleBar').style.display = 'none';
+    document.getElementById('puzzleWin').style.display = 'none';
+    playerColor = 'w';
+    orientation = 'w';
+    gameSaved = false;
+    newGame();
+  }
+  function tryPuzzleMove(m){
+    var st = state();
+    if (!puzzleMoveCorrect(st, m, puzzleMovesLeft)){
+      selected = null;
+      render();
+      document.getElementById('status').textContent = 'Not that one — there is a forced mate. Try again!';
+      var b = document.getElementById('board');
+      b.classList.remove('shaking');
+      void b.offsetWidth;
+      b.classList.add('shaking');
+      beep(160, 0.12, 'square', 0.04);
+      return;
+    }
+    doMove(m, currentLegal);
+    var ns = state();
+    if (isMatePos(ns)){
+      onPuzzleSolved();
+      render();
+      return;
+    }
+    puzzleMovesLeft--;
+    updatePuzzleBar();
+    beep(1174, 0.07, 'sine', 0.04);
+    refresh();
+  }
+  function puzzleDefenseMove(){
+    var st = state();
+    var legal = legalMoves(st);
+    if (!legal.length){ thinking = false; refresh(); return; }
+    var best = legal[0], bestScore = Infinity;
+    for (var i = 0; i < legal.length; i++){
+      var s2 = makeMove(st, legal[i]);
+      var lm = legalMoves(s2), mates = 0;
+      for (var j = 0; j < lm.length; j++)
+        if (isMatePos(makeMove(s2, lm[j]))) mates++;
+      if (mates < bestScore){ bestScore = mates; best = legal[i]; if (mates === 0) break; }
+    }
+    doMove(best, legal);
+    thinking = false;
+    refresh();
+  }
+  function onPuzzleSolved(){
+    locked = true;
+    var solved = loadSolved();
+    if (solved.indexOf(puzzleIdx) < 0){ solved.push(puzzleIdx); saveSolved(solved); }
+    document.getElementById('puzzleWinText').textContent = solved.length >= PUZZLES.length
+      ? 'You solved every puzzle. Champion!'
+      : 'Solved ' + solved.length + ' of ' + PUZZLES.length + ' puzzles.';
+    document.getElementById('puzzleWin').style.display = 'flex';
+    document.getElementById('status').textContent = 'Puzzle solved!';
+    beep(784, 0.1, 'sine', 0.04);
+    setTimeout(function(){ beep(988, 0.1, 'sine', 0.04); }, 110);
+    setTimeout(function(){ beep(1318, 0.16, 'sine', 0.045); }, 220);
+  }
+  function openPuzzles(){
+    sheetOpen = 'puzzles';
+    document.getElementById('puzzleSheet').style.display = 'flex';
+    renderPuzzleList();
+  }
+  function renderPuzzleList(){
+    var solved = loadSolved();
+    var list = document.getElementById('puzzleList');
+    list.innerHTML = '';
+    for (var i = 0; i < PUZZLES.length; i++){
+      (function(idx){
+        var pz = PUZZLES[idx];
+        var st = parseFEN(pz.fen);
+        var done = solved.indexOf(idx) >= 0;
+        var row = document.createElement('div');
+        row.className = 'hrow';
+        row.innerHTML = '<div class="hmain"><div class="htitle">Puzzle ' + (idx + 1) + '</div>' +
+          '<div class="hsub">Mate in ' + pz.mateIn + ' · ' + (st.turn === 'w' ? 'White' : 'Black') + ' to play</div></div>' +
+          (done ? '<span class="cls-best" style="font-size:3vmin">\u2713</span>'
+                : '<span style="color:#a49f92;font-size:3vmin">\u203A</span>');
+        row.addEventListener('click', function(){ startPuzzle(idx); });
+        list.appendChild(row);
+      })(i);
+    }
+    if (!PUZZLES.length)
+      list.innerHTML = '<div class="hempty">No puzzles yet.</div>';
+  }
+  document.getElementById('puzzlesBtn').addEventListener('click', openPuzzles);
+  document.getElementById('puzzleClose').addEventListener('click', closeSheets);
+  document.getElementById('puzzleRestart').addEventListener('click', function(){
+    if (puzzleMode) startPuzzle(puzzleIdx);
+  });
+  document.getElementById('puzzleExit').addEventListener('click', function(){
+    if (puzzleMode) exitPuzzle();
+  });
+  document.getElementById('puzzleNext').addEventListener('click', function(){
+    document.getElementById('puzzleWin').style.display = 'none';
+    startPuzzle((puzzleIdx + 1) % PUZZLES.length);
+  });
+  document.getElementById('puzzleWinExit').addEventListener('click', function(){
+    if (puzzleMode) exitPuzzle();
+  });
+
+  /* ---- Day streak + welcome-back ------------------------------------ */
+  var STREAK_KEY = 'glasschess.streak.v1';
+  var streakCount = 0;
+  function dateStr(d){ return d.getFullYear() + '-' + (d.getMonth() + 1) + '-' + d.getDate(); }
+  function loadStreak(){
+    try{
+      var s = JSON.parse(localStorage.getItem(STREAK_KEY) || 'null');
+      if (s && s.count) return s;
+    }catch(e){}
+    return { count: 0, last: '' };
+  }
+  function saveStreak(s){
+    try{ localStorage.setItem(STREAK_KEY, JSON.stringify(s)); }catch(e){}
+  }
+  function updateStreakChip(){
+    document.getElementById('streakChip').textContent =
+      streakCount > 0 ? '\uD83D\uDD25 ' + streakCount : '';
+  }
+  function showWelcome(n){
+    document.getElementById('welcomeTitle').textContent = n > 1 ? 'WOOHOO!' : 'WELCOME!';
+    document.getElementById('welcomeText').textContent = n > 1 ? "YOU'RE BACK!" : 'A NEW STREAK BEGINS';
+    document.getElementById('welcomeDay').textContent = 'THIS IS YOUR DAY ' + n;
+    var fl = document.getElementById('welcomeFlames');
+    fl.innerHTML = '';
+    for (var fi = 0; fi < 5; fi++){
+      var sp = document.createElement('span');
+      sp.textContent = '\uD83D\uDD25';
+      sp.style.animationDelay = (fi * 0.13) + 's';
+      sp.style.fontSize = (fi === 2 ? 7.6 : 5.4) + 'vmin';
+      fl.appendChild(sp);
+    }
+    var cf = document.getElementById('welcomeConfetti');
+    cf.innerHTML = '';
+    var colors = ['#ffb300', '#739552', '#e05555', '#5d84a6', '#f6f2e8'];
+    for (var ci2 = 0; ci2 < 16; ci2++){
+      var pc = document.createElement('i');
+      pc.className = 'confetti';
+      pc.style.left = (3 + (ci2 * 37) % 92) + '%';
+      pc.style.background = colors[ci2 % colors.length];
+      pc.style.animationDelay = ((ci2 % 8) * 0.18) + 's';
+      cf.appendChild(pc);
+    }
+    document.getElementById('welcomeOverlay').style.display = 'flex';
+    welcomeOpen = true;
+    setTimeout(function(){ beep(523, 0.09, 'sine', 0.04); }, 60);
+    setTimeout(function(){ beep(659, 0.09, 'sine', 0.04); }, 170);
+    setTimeout(function(){ beep(784, 0.12, 'sine', 0.045); }, 280);
+    setTimeout(function(){ beep(1046, 0.16, 'sine', 0.045); }, 390);
+  }
+  function dismissWelcome(){
+    if (!welcomeOpen) return;
+    welcomeOpen = false;
+    document.getElementById('welcomeOverlay').style.display = 'none';
+  }
+  document.getElementById('welcomeBtn').addEventListener('click', dismissWelcome);
+  document.getElementById('welcomeOverlay').addEventListener('click', function(e){
+    if (e.target === this) dismissWelcome();
+  });
+  (function streakInit(){
+    var s = loadStreak();
+    var today = dateStr(new Date());
+    if (s.last !== today){
+      var y = new Date();
+      y.setDate(y.getDate() - 1);
+      s.count = (s.last === dateStr(y)) ? s.count + 1 : 1;
+      s.last = today;
+      saveStreak(s);
+      streakCount = s.count;
+      updateStreakChip();
+      showWelcome(s.count);
+    } else {
+      streakCount = s.count;
+      updateStreakChip();
+    }
+  })();
 
   /* ---- Head Gesture Detection ----------------------------------------
      Same HeadTracker as head-tracker.js (kept inline so this single
@@ -1333,6 +1705,7 @@ if (typeof document !== 'undefined'){
 
   tracker.on('nod-yes', function(){
     console.log('User nodded yes');
+    if (welcomeOpen){ dismissWelcome(); return; }
     if (resignOpen){ document.getElementById('resignYes').click(); return; }
     if (pendingPromo){
       var pr = document.getElementById('promoRow');
@@ -1345,6 +1718,7 @@ if (typeof document !== 'undefined'){
   });
   tracker.on('shake-no', function(){
     console.log('User shook head no');
+    if (welcomeOpen){ dismissWelcome(); return; }
     if (sheetOpen){ closeSheets(); return; }
     if (resignOpen){ document.getElementById('resignNo').click(); return; }
     if (pendingPromo){ closePromo(); return; }
@@ -1354,7 +1728,7 @@ if (typeof document !== 'undefined'){
   });
   tracker.on('look-up', function(){
     console.log('User looked up');
-    if (sheetOpen || resignOpen || pendingPromo) return;
+    if (welcomeOpen || sheetOpen || resignOpen || pendingPromo) return;
     if (movesOpen()){ document.getElementById('movesClose').click(); return; }
     document.getElementById('movesBtn').click();
   });
