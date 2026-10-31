@@ -292,7 +292,7 @@
   <div class="overlay" id="menuOverlay">
     <div id="menuGrid"></div>
     <div class="menuHint">Swipes move · Pinch selects · Shake closes</div>
-    <div class="menuHint" style="opacity:.55">The Chess Display · build Oct 30 v15</div>
+    <div class="menuHint" style="opacity:.55">The Chess Display · build Oct 30 v16</div>
   </div>
   <div class="overlay" id="diffOverlay">
     <div id="diffGrid"></div>
@@ -1063,6 +1063,7 @@ if (typeof document !== 'undefined'){
         if (puzzleMode) puzzleDefenseMove(); else aiMove();
       }, 400);
     }
+    saveProgress();
   }
 
   function doMove(m, legalForSAN){
@@ -1361,7 +1362,14 @@ if (typeof document !== 'undefined'){
       setTimeout(function(){ hintFrom = -1; hintTo = -1; render(); }, 1400);
     }
   });
+  var lastFlipAt = 0;
   document.getElementById('flipBtn').addEventListener('click', function(){
+    /* A doubled signal on the glasses can arrive well after the first
+       activation lands; a plain re-flip inside 2.5 s is treated as that
+       echo, never as a deliberate flip back. */
+    var now = Date.now();
+    if (now - lastFlipAt < 2500) return;
+    lastFlipAt = now;
     /* View-only flip, in games and puzzles alike: whose turn it is and
        which color you play never change — only the board's rotation.
        The status line confirms the flip out loud, briefly. */
@@ -2319,11 +2327,65 @@ if (typeof document !== 'undefined'){
   });
   setHeadLabel();
 
-  playerColor = takeNextColor();
-  orientation = playerColor;
-  cursor = playerColor === 'w' ? 52 : 12;
+  /* ---- Saved game: an accidental exit to the Meta menu (or any close)
+     must not cost the game. The position is written on every refresh
+     and restored on boot whenever it is unfinished — games and
+     half-solved puzzles alike. ---- */
+  var PROGRESS_KEY = 'glasschess.progress.v1';
+  function saveProgress(){
+    try{
+      localStorage.setItem(PROGRESS_KEY, JSON.stringify({
+        v: 1,
+        mode: puzzleMode ? 'puzzle' : 'game',
+        puzzle: (puzzleMode && currentPuzzle) ? { fen: currentPuzzle.fen, mateIn: currentPuzzle.mateIn } : null,
+        playerColor: playerColor,
+        difficulty: difficulty,
+        orientation: orientation,
+        finished: !!(gameOver || locked),
+        log: gameLog.map(function(e){
+          return { fen: stateToFEN(e.state), from: e.from, to: e.to, san: e.san };
+        })
+      }));
+    }catch(e){}
+  }
+  function restoreProgress(){
+    var data = null;
+    try{ data = JSON.parse(localStorage.getItem(PROGRESS_KEY) || 'null'); }catch(e){}
+    if (!data || data.finished || !data.log || !data.log.length) return false;
+    var log;
+    try{
+      log = data.log.map(function(e){
+        return { state: parseFEN(e.fen), from: e.from, to: e.to, san: e.san };
+      });
+    }catch(e){ return false; }
+    gameLog = log;
+    puzzleMode = data.mode === 'puzzle' && !!data.puzzle;
+    currentPuzzle = puzzleMode ? data.puzzle : null;
+    playerColor = data.playerColor === 'b' ? 'b' : 'w';
+    if (DIFFS[data.difficulty]) difficulty = data.difficulty;
+    orientation = data.orientation === 'b' ? 'b' : 'w';
+    if (puzzleMode){
+      var made = 0;
+      for (var i = 1; i < gameLog.length; i++)
+        if (opp(gameLog[i].state.turn) === playerColor) made++;
+      puzzleMovesLeft = Math.max(1, currentPuzzle.mateIn - made);
+    }
+    selected = null; gameOver = false; locked = false; thinking = false;
+    gameSaved = false; savedRec = null;
+    cursor = playerColor === 'w' ? 52 : 12;
+    if (puzzleMode) document.getElementById('stage').classList.add('puzzling');
+    else document.getElementById('stage').classList.remove('puzzling');
+    refresh();
+    return true;
+  }
+
   applyTheme(theme);
-  refresh();
+  if (!restoreProgress()){
+    playerColor = takeNextColor();
+    orientation = playerColor;
+    cursor = playerColor === 'w' ? 52 : 12;
+    refresh();
+  }
 }
 
 </script>
