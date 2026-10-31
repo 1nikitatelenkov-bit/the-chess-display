@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "name": "The Chess Display",
+  "description": "Chess for Meta Ray-Ban Display glasses: play the computer at six levels and solve endless mate puzzles.",
+  "appearance": {
+    "theme_color": "#ECECD2",
+    "icon": { "src": "../icon-mono.png", "type": "monochrome" },
+    "icon_background": {
+      "colors": ["#9CC184", "#739552", "#47632F", "#22300F"],
+      "stops": [0.0, 0.33, 0.7, 1.0],
+      "inner_glow_color": "#ECECD2"
+    }
+  }
+}
