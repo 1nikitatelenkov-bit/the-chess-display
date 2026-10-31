@@ -239,6 +239,7 @@
       <p id="puzzleWinText">You found the mate.</p>
       <div style="display:flex;gap:1.6vmin">
         <button class="big" id="puzzleNext">Next puzzle</button>
+        <button class="big alt" id="puzzleAgain">Solve again</button>
         <button class="big alt" id="puzzleWinExit">Exit</button>
       </div>
     </div>
@@ -291,8 +292,9 @@
   </div>
   <div class="overlay" id="menuOverlay">
     <div id="menuGrid"></div>
+    <button class="backBtn" id="voiceBar" style="width:min(94%,118vmin);margin-top:1.2vmin">🎤 Voice moves · <span id="voiceState">Off</span></button>
     <div class="menuHint">Swipes move · Pinch selects · Shake closes</div>
-    <div class="menuHint" style="opacity:.55">The Chess Display · build Oct 30 v16</div>
+    <div class="menuHint" style="opacity:.55">The Chess Display · build Oct 30 v17</div>
   </div>
   <div class="overlay" id="diffOverlay">
     <div id="diffGrid"></div>
@@ -1097,6 +1099,21 @@ if (typeof document !== 'undefined'){
     if (st.turn !== playerColor) return;
     beep(700, 0.03, 'sine', 0.018);
     if (selected !== null){
+      /* Tapping your own rook with the king selected castles that side —
+         the way most players reach for it. */
+      var selP = st.board[selected], tapP = st.board[idx];
+      if (selP && selP.toUpperCase() === 'K' && tapP && tapP.toUpperCase() === 'R' && pieceColor(tapP) === playerColor){
+        var cSide = idx > selected ? 'K' : 'Q';
+        if (playerColor === 'b') cSide = cSide.toLowerCase();
+        for (var ci2 = 0; ci2 < currentLegal.length; ci2++){
+          var cm = currentLegal[ci2];
+          if (cm.from === selected && cm.castle === cSide){
+            if (puzzleMode) tryPuzzleMove(cm);
+            else { doMove(cm, currentLegal); refresh(); }
+            return;
+          }
+        }
+      }
       var cands = [];
       for (var i = 0; i < currentLegal.length; i++){
         var m = currentLegal[i];
@@ -1363,7 +1380,7 @@ if (typeof document !== 'undefined'){
     }
   });
   var lastFlipAt = 0;
-  document.getElementById('flipBtn').addEventListener('click', function(){
+  function doFlip(){
     /* A doubled signal on the glasses can arrive well after the first
        activation lands; a plain re-flip inside 2.5 s is treated as that
        echo, never as a deliberate flip back. */
@@ -1379,7 +1396,8 @@ if (typeof document !== 'undefined'){
     var stEl = document.getElementById('status');
     stEl.textContent = 'Board flipped — ' + (orientation === 'w' ? 'White' : 'Black') + ' at the bottom';
     setTimeout(function(){ render(); }, 1300);
-  });
+  }
+  document.getElementById('flipBtn').addEventListener('click', doFlip);
   document.getElementById('resignBtn').addEventListener('click', function(){
     if (thinking || gameOver || locked) return;
     if (puzzleMode){
@@ -1450,13 +1468,13 @@ if (typeof document !== 'undefined'){
   var dlgWasOpen = false;
   function dlgList(){
     if (document.getElementById('puzzleWin').style.display === 'flex')
-      return [document.getElementById('puzzleNext'), document.getElementById('puzzleWinExit')];
+      return [document.getElementById('puzzleNext'), document.getElementById('puzzleAgain'), document.getElementById('puzzleWinExit')];
     if (document.getElementById('endOverlay').style.display === 'flex')
       return [document.getElementById('againBtn')];
     return null;
   }
   function paintDlg(){
-    var ids = ['puzzleNext', 'puzzleWinExit', 'againBtn'];
+    var ids = ['puzzleNext', 'puzzleAgain', 'puzzleWinExit', 'againBtn'];
     for (var i = 0; i < ids.length; i++){
       var el = document.getElementById(ids[i]);
       if (el) el.classList.remove('dlgOn');
@@ -1491,6 +1509,15 @@ if (typeof document !== 'undefined'){
       if (e.key === 'ArrowLeft' || e.key === 'ArrowUp'){ dlgMove(-1); e.preventDefault(); }
       else if (e.key === 'ArrowRight' || e.key === 'ArrowDown'){ dlgMove(1); e.preventDefault(); }
       else if (e.key === 'Enter' || e.key === ' '){ dlgActivate(); e.preventDefault(); }
+      return;
+    }
+    var ae = document.activeElement;
+    if ((e.key === 'Enter' || e.key === ' ') && ae && RAIL_IDS.indexOf(ae.id) >= 0){
+      /* The glasses' own navigation may focus a rail button and deliver
+         Enter to it directly, bypassing the zone system entirely. */
+      railIdx = RAIL_IDS.indexOf(ae.id);
+      railActivate();
+      e.preventDefault();
       return;
     }
     if (sheetOpen){
@@ -1550,6 +1577,7 @@ if (typeof document !== 'undefined'){
   var colorIdx = 0;
   var diffBackFocus = false;
   var colorBackFocus = false;
+  var voiceFocus = false;
   var COLOR_ORDER = ['green', 'blue', 'red', 'gold', 'mono'];
   var RAIL_IDS = ['railHint', 'railUndo', 'railResign', 'railFlip', 'railMenu'];
 
@@ -1588,7 +1616,7 @@ if (typeof document !== 'undefined'){
     if (id === 'railMenu'){ openMenu(); return; }
     if (id === 'railHint') document.getElementById('hintBtn').click();
     else if (id === 'railUndo') document.getElementById('undoBtn').click();
-    else if (id === 'railFlip') document.getElementById('flipBtn').click();
+    else if (id === 'railFlip') doFlip();
     else if (id === 'railResign'){
       if (puzzleMode) document.getElementById('puzzleExit').click();
       else document.getElementById('resignBtn').click();
@@ -1624,7 +1652,7 @@ if (typeof document !== 'undefined'){
     grid.innerHTML = '';
     menuTiles.forEach(function(t, i){
       var el = document.createElement('button');
-      el.className = 'tile' + (i === menuIdx ? ' on' : '');
+      el.className = 'tile' + (i === menuIdx && !voiceFocus ? ' on' : '');
       el.innerHTML = '<span>' + t.label + '</span>' +
         (t.value ? '<span class="val">' + t.value + '</span>' : '');
       el.addEventListener('click', function(){ menuIdx = i; renderTiles(); menuActivate(); });
@@ -1635,11 +1663,14 @@ if (typeof document !== 'undefined'){
     if (menuOpen || welcomeOpen) return;
     menuTiles = buildMenuTiles();
     menuIdx = 0;
+    voiceFocus = false;
     document.getElementById('menuOverlay').style.display = 'flex';
     setZone('menu');
     renderTiles();
+    renderVoiceBar();
   }
   function closeMenu(){
+    voiceFocus = false;
     document.getElementById('menuOverlay').style.display = 'none';
     document.getElementById('diffOverlay').style.display = 'none';
     document.getElementById('colorOverlay').style.display = 'none';
@@ -1648,11 +1679,13 @@ if (typeof document !== 'undefined'){
   function backToMenu(){
     diffBackFocus = false;
     colorBackFocus = false;
+    voiceFocus = false;
     document.getElementById('diffOverlay').style.display = 'none';
     document.getElementById('colorOverlay').style.display = 'none';
     menuTiles = buildMenuTiles();
     setZone('menu');
     renderTiles();
+    renderVoiceBar();
   }
   var diffIdx = 3;
   function renderDiffTiles(){
@@ -1732,29 +1765,132 @@ if (typeof document !== 'undefined'){
         }
       }
     } else {
-      var col = menuIdx % 3, row = (menuIdx / 3) | 0;
-      col = Math.max(0, Math.min(2, col + dx));
-      row = Math.max(0, Math.min(1, row + dy));
-      menuIdx = row * 3 + col;
-      renderTiles();
+      if (voiceFocus){
+        if (dy < 0){ voiceFocus = false; renderTiles(); renderVoiceBar(); }
+      } else {
+        var col = menuIdx % 3, row = (menuIdx / 3) | 0;
+        if (dy > 0 && row === 1){ voiceFocus = true; renderTiles(); renderVoiceBar(); }
+        else {
+          col = Math.max(0, Math.min(2, col + dx));
+          row = Math.max(0, Math.min(1, row + dy));
+          menuIdx = row * 3 + col;
+          renderTiles();
+        }
+      }
     }
     beep(660, 0.05, 'sine', 0.03);
   }
   function menuActivate(){
     if (uiZone === 'diff'){ if (diffBackFocus) backToMenu(); else pickDifficulty(); return; }
     if (uiZone === 'color'){ if (colorBackFocus) backToMenu(); else pickColor(); return; }
+    if (voiceFocus){ toggleVoice(); renderVoiceBar(); return; }
     var t = menuTiles[menuIdx];
     if (t) t.fn();
   }
   document.getElementById('menuBtn').addEventListener('click', openMenu);
   RAIL_IDS.forEach(function(id, i){
-    document.getElementById(id).addEventListener('click', function(){
+    var el = document.getElementById(id);
+    function tap(){ railIdx = i; railActivate(); }
+    el.addEventListener('click', tap);
+    el.addEventListener('pointerdown', tap);
+    el.addEventListener('focus', function(){
       railIdx = i;
-      railActivate();
+      if (uiZone === 'board') setZone('rail'); else renderRail();
     });
   });
   document.getElementById('diffBack').addEventListener('click', function(){ backToMenu(); });
   document.getElementById('colorBack').addEventListener('click', function(){ backToMenu(); });
+
+  /* ---- Voice moves: say the move ("e4", "knight f3", "castle").
+     Uses the browser's speech recognition where it exists — still
+     experimental on the glasses themselves; where the API is missing
+     the menu option simply reports n/a. ---- */
+  var voiceOn = false, voiceRec = null;
+  function voiceSupported(){ return ('SpeechRecognition' in window) || ('webkitSpeechRecognition' in window); }
+  function flashStatus(msg){
+    document.getElementById('status').textContent = msg;
+    setTimeout(function(){ render(); }, 1700);
+  }
+  function renderVoiceBar(){
+    var bar = document.getElementById('voiceBar');
+    if (!bar) return;
+    bar.className = 'backBtn' + (voiceFocus ? ' on' : '');
+    document.getElementById('voiceState').textContent = voiceOn ? 'On' : (voiceSupported() ? 'Off' : 'n/a');
+  }
+  function toggleVoice(){
+    if (voiceOn){ stopVoice(); return; }
+    if (!voiceSupported()){ flashStatus('Voice is not available on this device'); return; }
+    try{
+      var SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+      voiceRec = new SR();
+      voiceRec.lang = 'en-US';
+      voiceRec.continuous = false;
+      voiceRec.interimResults = false;
+      voiceRec.onresult = function(ev){ handleVoiceCommand(ev.results[0][0].transcript || ''); };
+      voiceRec.onend = function(){ if (voiceOn && voiceRec){ try{ voiceRec.start(); }catch(e){} } };
+      voiceRec.onerror = function(ev){
+        if (ev.error === 'not-allowed' || ev.error === 'service-not-allowed'){ stopVoice(); flashStatus('Microphone is not allowed here'); }
+      };
+      voiceOn = true;
+      voiceRec.start();
+      flashStatus('Voice on — say a move: "e4", "knight f3", "castle"');
+    }catch(e){ voiceOn = false; voiceRec = null; }
+    renderVoiceBar();
+  }
+  function stopVoice(){
+    voiceOn = false;
+    if (voiceRec){ try{ voiceRec.stop(); }catch(e){} voiceRec = null; }
+    renderVoiceBar();
+  }
+  function handleVoiceCommand(raw){
+    var t = ' ' + raw.toLowerCase().replace(/[^a-z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim() + ' ';
+    if (welcomeOpen || menuOpen || sheetOpen || resignOpen || pendingPromo) return;
+    var st = state();
+    if (st.turn !== playerColor || thinking || gameOver || locked){ flashStatus('Not your turn'); return; }
+    if (t.indexOf(' undo') >= 0){ document.getElementById('undoBtn').click(); return; }
+    if (t.indexOf(' hint') >= 0){ document.getElementById('hintBtn').click(); return; }
+    if (t.indexOf(' flip') >= 0){ doFlip(); return; }
+    var move = null, i;
+    if (t.indexOf(' castle') >= 0){
+      var wantQ = t.indexOf(' queen') >= 0 || t.indexOf(' long') >= 0;
+      for (i = 0; i < currentLegal.length; i++)
+        if (currentLegal[i].castle && ((currentLegal[i].castle === 'Q' || currentLegal[i].castle === 'q') === wantQ)) move = currentLegal[i];
+    }
+    if (!move){
+      var clean = raw.toLowerCase(), sqs = [], mm;
+      var re = /([a-h])\s*([1-8])/g;
+      while ((mm = re.exec(clean)) !== null) sqs.push((8 - parseInt(mm[2], 10)) * 8 + 'abcdefgh'.indexOf(mm[1]));
+      var pieceWords = { knight: 'N', night: 'N', horse: 'N', bishop: 'B', rook: 'R', queen: 'Q', king: 'K', pawn: 'P' };
+      var wantPiece = null;
+      for (var w in pieceWords)
+        if (t.indexOf(' ' + w + ' ') >= 0) wantPiece = pieceWords[w];
+      if (sqs.length >= 2){
+        for (i = 0; i < currentLegal.length; i++)
+          if (currentLegal[i].from === sqs[sqs.length - 2] && currentLegal[i].to === sqs[sqs.length - 1]){ move = currentLegal[i]; break; }
+      } else if (sqs.length === 1){
+        var cands = [];
+        for (i = 0; i < currentLegal.length; i++)
+          if (currentLegal[i].to === sqs[0] && (!wantPiece || currentLegal[i].piece.toUpperCase() === wantPiece)) cands.push(currentLegal[i]);
+        if (cands.length === 1) move = cands[0];
+        else if (cands.length > 1 && !wantPiece){
+          var pawns = cands.filter(function(c){ return c.piece.toUpperCase() === 'P'; });
+          if (pawns.length === 1) move = pawns[0];
+        }
+      }
+    }
+    if (!move){ flashStatus('Did not catch that move'); return; }
+    if (move.promo){
+      for (i = 0; i < currentLegal.length; i++)
+        if (currentLegal[i].from === move.from && currentLegal[i].to === move.to && currentLegal[i].promo === 'Q'){ move = currentLegal[i]; break; }
+    }
+    flashStatus('You said: ' + raw);
+    if (puzzleMode) tryPuzzleMove(move);
+    else { doMove(move, currentLegal); refresh(); }
+  }
+  document.getElementById('voiceBar').addEventListener('click', function(){
+    toggleVoice();
+    renderVoiceBar();
+  });
 
   /* ---- Puzzles: endless, generated + solver-verified -----------------
      Puzzles are generated on the fly from mating-pattern templates and
@@ -2063,6 +2199,10 @@ if (typeof document !== 'undefined'){
   });
   document.getElementById('puzzleWinExit').addEventListener('click', function(){
     if (puzzleMode) exitPuzzle();
+  });
+  document.getElementById('puzzleAgain').addEventListener('click', function(){
+    document.getElementById('puzzleWin').style.display = 'none';
+    if (puzzleMode && currentPuzzle) startPuzzleDeal(currentPuzzle);
   });
 
   /* ---- Day streak + welcome-back ------------------------------------ */
@@ -2377,6 +2517,12 @@ if (typeof document !== 'undefined'){
     else document.getElementById('stage').classList.remove('puzzling');
     refresh();
     return true;
+  }
+
+  /* Offline: cache the app shell so the glasses can open it with no
+     network at all (network-first, so updates still arrive). */
+  if (typeof navigator !== 'undefined' && 'serviceWorker' in navigator){
+    navigator.serviceWorker.register('sw.js').catch(function(){});
   }
 
   applyTheme(theme);
