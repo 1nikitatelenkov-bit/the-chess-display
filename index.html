@@ -199,7 +199,6 @@
     <button class="railBtn" id="railHint">Hint</button>
     <button class="railBtn" id="railUndo">Undo</button>
     <button class="railBtn" id="railResign">Resign</button>
-    <button class="railBtn" id="railFlip">Flip board</button>
     <button class="railBtn" id="railMenu">Menu</button>
   </div>
   <div id="main">
@@ -274,7 +273,6 @@
       <button class="btn" id="newBtn">New</button>
       <button class="btn" id="undoBtn">Undo</button>
       <button class="btn" id="hintBtn">Hint</button>
-      <button class="btn" id="flipBtn">Flip</button>
       <button class="btn" id="resignBtn">Resign</button>
     </div>
     <div class="row">
@@ -301,7 +299,7 @@
     <div id="menuGrid"></div>
     <button class="backBtn" id="voiceBar" style="width:min(94%,118vmin);margin-top:1.2vmin">🎤 Voice moves · <span id="voiceState">Off</span></button>
     <div class="menuHint">Swipes move · Pinch selects · Shake closes</div>
-    <div class="menuHint" style="opacity:.55">The Chess Display · build Oct 31 v19</div>
+    <div class="menuHint" style="opacity:.55">The Chess Display · build Oct 31 v20</div>
   </div>
   <div class="overlay" id="diffOverlay">
     <div id="diffGrid"></div>
@@ -952,8 +950,8 @@ if (typeof document !== 'undefined'){
       var missing = start[t2] - counts[enemy][t2];
       for (var k = 0; k < missing; k++) captured.push(t2);
     }
-    var diff = (mat[side] - mat[enemy]) / 100;
-    return { captured: captured, capturedColor: enemy, ahead: diff > 0 ? diff : 0 };
+    var diff = Math.round((mat[side] - mat[enemy]) / 100);
+    return { captured: captured, capturedColor: enemy, diff: diff };
   }
 
   function renderBar(prefix, side){
@@ -963,7 +961,7 @@ if (typeof document !== 'undefined'){
       html += '<span class="capSvg">' + pieceSVG(data.captured[i], data.capturedColor === 'w') + '</span>';
     }
     document.getElementById(prefix + 'Captured').innerHTML = html;
-    document.getElementById(prefix + 'Mat').textContent = data.ahead ? '+' + data.ahead : '';
+    document.getElementById(prefix + 'Mat').textContent = data.diff > 0 ? '+' + data.diff : data.diff < 0 ? '' + data.diff : '';
     document.getElementById(prefix + 'Avatar').innerHTML = pieceSVG('N', side === 'w');
   }
 
@@ -1056,6 +1054,7 @@ if (typeof document !== 'undefined'){
     gameSaved = true;
   }
 
+  var capFlash = null, capFlashSeq = 0;
   function refresh(){
     var st = state();
     var legal = legalMoves(st);
@@ -1082,6 +1081,11 @@ if (typeof document !== 'undefined'){
         if (puzzleMode) puzzleDefenseMove(); else aiMove();
       }, 400);
     }
+    if (capFlash){
+      var cf = capFlash;
+      document.getElementById('status').textContent = cf.text;
+      setTimeout(function(){ if (capFlash && capFlash.seq === cf.seq){ capFlash = null; render(); } }, 2600);
+    }
     saveProgress();
   }
 
@@ -1091,6 +1095,10 @@ if (typeof document !== 'undefined'){
     gameLog.push({state: makeMove(st, m), from: m.from, to: m.to, san: san});
     selected = null;
     if (m.captured) beep(170, 0.09, 'square', 0.05); else beep(440, 0.05);
+    if (!puzzleMode && m.captured && st.turn === playerColor){
+      capFlash = { text: 'Captured ' + (PIECE_NAMES[m.captured.toUpperCase()] || 'piece') +
+        ' +' + Math.round(VAL[m.captured.toUpperCase()] / 100), seq: ++capFlashSeq };
+    }
     var ns = state();
     if (inCheck(ns, ns.turn)) beep(880, 0.07);
   }
@@ -1111,6 +1119,7 @@ if (typeof document !== 'undefined'){
 
   function activate(idx){
     if (sheetOpen || resignOpen || welcomeOpen || menuOpen || thinking || gameOver || locked || pendingPromo) return;
+    capFlash = null;
     if (uiZone === 'rail') setZone('board');
     var st = state();
     if (st.turn !== playerColor) return;
@@ -1494,25 +1503,6 @@ if (typeof document !== 'undefined'){
       setTimeout(function(){ hintFrom = -1; hintTo = -1; render(); }, 1400);
     }
   });
-  var lastFlipAt = 0;
-  function doFlip(){
-    /* A doubled signal on the glasses can arrive well after the first
-       activation lands; a plain re-flip inside 2.5 s is treated as that
-       echo, never as a deliberate flip back. */
-    var now = Date.now();
-    if (now - lastFlipAt < 2500) return;
-    lastFlipAt = now;
-    /* View-only flip, in games and puzzles alike: whose turn it is and
-       which color you play never change — only the board's rotation.
-       The status line confirms the flip out loud, briefly. */
-    orientation = opp(orientation);
-    selected = null;
-    render();
-    var stEl = document.getElementById('status');
-    stEl.textContent = 'Board flipped — ' + (orientation === 'w' ? 'White' : 'Black') + ' at the bottom';
-    setTimeout(function(){ render(); }, 1300);
-  }
-  document.getElementById('flipBtn').addEventListener('click', doFlip);
   document.getElementById('resignBtn').addEventListener('click', function(){
     if (thinking || gameOver || locked) return;
     if (puzzleMode){
@@ -1671,7 +1661,7 @@ if (typeof document !== 'undefined'){
 
   /* ---- Navigation: left rail + tile menus (his layouts) --------------
      Nothing overlays the board during play: the five everyday actions
-     live in a permanent left rail (Hint, Undo, Resign/Exit, Flip board,
+     live in a permanent left rail (Hint, Undo, Resign/Exit,
      Menu). The swipe cursor leaves the board to the LEFT to reach the
      rail; the Menu opens a 3x2 tile grid (New game -> difficulty grid,
      Puzzles, History, Board color -> color pill, Head gestures,
@@ -1686,7 +1676,7 @@ if (typeof document !== 'undefined'){
   var colorBackFocus = false;
   var voiceFocus = false;
   var COLOR_ORDER = ['green', 'blue', 'red', 'gold', 'mono'];
-  var RAIL_IDS = ['railHint', 'railUndo', 'railResign', 'railFlip', 'railMenu'];
+  var RAIL_IDS = ['railHint', 'railUndo', 'railResign', 'railMenu'];
 
   function setZone(z){
     uiZone = z;
@@ -1712,9 +1702,7 @@ if (typeof document !== 'undefined'){
   var railStamp = 0, railStampIdx = -1;
   function railActivate(){
     /* One gesture can arrive twice on the glasses (a pinch keypress plus
-       a click echo). Swallow an immediate repeat of the same rail action —
-       for Flip board, the only toggle, a double fire looked like the
-       button did nothing at all. */
+       a click echo). Swallow an immediate repeat of the same rail action. */
     var now = Date.now();
     if (railIdx === railStampIdx && now - railStamp < 900) return;
     railStamp = now; railStampIdx = railIdx;
@@ -1723,7 +1711,6 @@ if (typeof document !== 'undefined'){
     if (id === 'railMenu'){ openMenu(); return; }
     if (id === 'railHint') document.getElementById('hintBtn').click();
     else if (id === 'railUndo') document.getElementById('undoBtn').click();
-    else if (id === 'railFlip') doFlip();
     else if (id === 'railResign'){
       if (puzzleMode) document.getElementById('puzzleExit').click();
       else document.getElementById('resignBtn').click();
@@ -1952,7 +1939,6 @@ if (typeof document !== 'undefined'){
     if (st.turn !== playerColor || thinking || gameOver || locked){ flashStatus('Not your turn'); return; }
     if (t.indexOf(' undo') >= 0){ document.getElementById('undoBtn').click(); return; }
     if (t.indexOf(' hint') >= 0){ document.getElementById('hintBtn').click(); return; }
-    if (t.indexOf(' flip') >= 0){ doFlip(); return; }
     var move = null, i;
     if (t.indexOf(' castle') >= 0){
       var wantQ = t.indexOf(' queen') >= 0 || t.indexOf(' long') >= 0;
