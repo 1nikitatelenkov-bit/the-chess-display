@@ -294,7 +294,7 @@
     <div id="menuGrid"></div>
     <button class="backBtn" id="voiceBar" style="width:min(94%,118vmin);margin-top:1.2vmin">🎤 Voice moves · <span id="voiceState">Off</span></button>
     <div class="menuHint">Swipes move · Pinch selects · Shake closes</div>
-    <div class="menuHint" style="opacity:.55">The Chess Display · build Oct 30 v17</div>
+    <div class="menuHint" style="opacity:.55">The Chess Display · build Oct 31 v18</div>
   </div>
   <div class="overlay" id="diffOverlay">
     <div id="diffGrid"></div>
@@ -1511,15 +1511,6 @@ if (typeof document !== 'undefined'){
       else if (e.key === 'Enter' || e.key === ' '){ dlgActivate(); e.preventDefault(); }
       return;
     }
-    var ae = document.activeElement;
-    if ((e.key === 'Enter' || e.key === ' ') && ae && RAIL_IDS.indexOf(ae.id) >= 0){
-      /* The glasses' own navigation may focus a rail button and deliver
-         Enter to it directly, bypassing the zone system entirely. */
-      railIdx = RAIL_IDS.indexOf(ae.id);
-      railActivate();
-      e.preventDefault();
-      return;
-    }
     if (sheetOpen){
       if (e.key === 'Escape'){ closeSheets(); return; }
       if (sheetOpen === 'review'){
@@ -1789,13 +1780,9 @@ if (typeof document !== 'undefined'){
   }
   document.getElementById('menuBtn').addEventListener('click', openMenu);
   RAIL_IDS.forEach(function(id, i){
-    var el = document.getElementById(id);
-    function tap(){ railIdx = i; railActivate(); }
-    el.addEventListener('click', tap);
-    el.addEventListener('pointerdown', tap);
-    el.addEventListener('focus', function(){
+    document.getElementById(id).addEventListener('click', function(){
       railIdx = i;
-      if (uiZone === 'board') setZone('rail'); else renderRail();
+      railActivate();
     });
   });
   document.getElementById('diffBack').addEventListener('click', function(){ backToMenu(); });
