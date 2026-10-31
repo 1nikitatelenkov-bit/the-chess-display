@@ -1361,10 +1361,8 @@ if (typeof document !== 'undefined'){
     }
   });
   document.getElementById('flipBtn').addEventListener('click', function(){
-    if (puzzleMode){
-      document.getElementById('status').textContent = 'Flip is off during a puzzle';
-      return;
-    }
+    /* View-only flip, in games and puzzles alike: whose turn it is and
+       which color you play never change — only the board's rotation. */
     orientation = opp(orientation);
     selected = null;
     render();
@@ -1563,7 +1561,15 @@ if (typeof document !== 'undefined'){
     renderRail();
     beep(660, 0.05, 'sine', 0.03);
   }
+  var railStamp = 0, railStampIdx = -1;
   function railActivate(){
+    /* One gesture can arrive twice on the glasses (a pinch keypress plus
+       a click echo). Swallow an immediate repeat of the same rail action —
+       for Flip board, the only toggle, a double fire looked like the
+       button did nothing at all. */
+    var now = Date.now();
+    if (railIdx === railStampIdx && now - railStamp < 350) return;
+    railStamp = now; railStampIdx = railIdx;
     var id = RAIL_IDS[railIdx];
     setZone('board');
     if (id === 'railMenu'){ openMenu(); return; }
