@@ -100,9 +100,16 @@
   .htitle{font-size:2.6vmin;font-weight:700}
   .hsub{font-size:2.1vmin;color:#a49f92}
   .hempty{font-size:2.5vmin;color:#a49f92;text-align:center;padding:6vmin 2vmin;line-height:1.5}
-  #revBoardBox{width:45vmin;height:45vmin;margin:0 auto;border-radius:1vmin;overflow:hidden;flex:0 0 auto;box-shadow:0 .8vmin 2.4vmin rgba(0,0,0,.5)}
-  #revCaption{min-height:6.4vmin;display:flex;align-items:center;justify-content:center;text-align:center;font-size:2.5vmin;color:#e8e6e1;padding:0 1vmin;line-height:1.3}
-  #revNav{display:flex;gap:.8vmin}
+  #revMain{display:flex;gap:1.4vmin;align-items:flex-start}
+  #revLeft{display:flex;flex-direction:column;gap:1vmin;flex:0 0 auto}
+  #revBoardBox{width:38vmin;height:38vmin;border-radius:1vmin;overflow:hidden;flex:0 0 auto;box-shadow:0 .8vmin 2.4vmin rgba(0,0,0,.5)}
+  #revCaption{width:38vmin;min-height:5.6vmin;display:flex;align-items:center;font-size:2.4vmin;color:#e8e6e1;line-height:1.3}
+  #revNav{display:flex;gap:.8vmin;width:38vmin}
+  #revSide{flex:1;background:#211e1a;border-radius:1.2vmin;padding:1.3vmin 1.5vmin;display:flex;flex-direction:column;gap:.9vmin;min-height:49.6vmin}
+  #revVerdict{font-size:2.7vmin;font-weight:700;color:#e8e6e1}
+  #revExplain{font-size:2.45vmin;line-height:1.5;color:#e8e6e1}
+  #revAdvice{font-size:2.45vmin;line-height:1.5;color:#ffd98a}
+  #revSpeak{margin-top:auto;align-self:flex-start}
   #revSummary{text-align:center;font-size:2.35vmin;color:#cfccc2;min-height:3.4vmin}
   #revMoves{flex:1;overflow-y:auto;font-size:2.45vmin;line-height:2.05;padding:.4vmin 1vmin;background:#211e1a;border-radius:1.2vmin}
   #revMoves b{color:#a49f92;font-weight:600}
@@ -294,7 +301,7 @@
     <div id="menuGrid"></div>
     <button class="backBtn" id="voiceBar" style="width:min(94%,118vmin);margin-top:1.2vmin">🎤 Voice moves · <span id="voiceState">Off</span></button>
     <div class="menuHint">Swipes move · Pinch selects · Shake closes</div>
-    <div class="menuHint" style="opacity:.55">The Chess Display · build Oct 31 v18</div>
+    <div class="menuHint" style="opacity:.55">The Chess Display · build Oct 31 v19</div>
   </div>
   <div class="overlay" id="diffOverlay">
     <div id="diffGrid"></div>
@@ -321,11 +328,21 @@
       <h2 id="revTitle">Game review</h2>
       <button class="xBtn" id="revClose">×</button>
     </div>
-    <div id="revBoardBox"><div id="revBoard" class="grid8"></div></div>
-    <div id="revCaption">Starting position</div>
-    <div id="revNav">
-      <button class="btn" id="revPrev">‹ Prev</button>
-      <button class="btn" id="revNext">Next ›</button>
+    <div id="revMain">
+      <div id="revLeft">
+        <div id="revBoardBox"><div id="revBoard" class="grid8"></div></div>
+        <div id="revCaption">Starting position</div>
+        <div id="revNav">
+          <button class="btn" id="revPrev">‹ Prev</button>
+          <button class="btn" id="revNext">Next ›</button>
+        </div>
+      </div>
+      <div id="revSide">
+        <div id="revVerdict">Your moves, explained</div>
+        <div id="revExplain">Step through the game — each of your moves gets a verdict, a plain-words explanation, and a tip.</div>
+        <div id="revAdvice"></div>
+        <button class="btn" id="revSpeak">🔊 Listen</button>
+      </div>
     </div>
     <div id="revSummary"></div>
     <div id="revMoves"></div>
@@ -1200,6 +1217,7 @@ if (typeof document !== 'undefined'){
   /* ---- Sheets (history / review) ---- */
   function closeSheets(){
     sheetOpen = null;
+    stopSpeak();
     document.getElementById('historySheet').style.display = 'none';
     document.getElementById('reviewSheet').style.display = 'none';
     document.getElementById('puzzleSheet').style.display = 'none';
@@ -1314,6 +1332,95 @@ if (typeof document !== 'undefined'){
       });
     }
   }
+  var PIECE_NAMES = { P: 'pawn', N: 'knight', B: 'bishop', R: 'rook', Q: 'queen', K: 'king' };
+  function sqName(idx){ return 'abcdefgh'.charAt(idx & 7) + (8 - (idx >> 3)); }
+  function moveFacts(mv, san){
+    if (!mv) return '';
+    if (mv.castle) return mv.castle === 'K' || mv.castle === 'k' ? 'castles kingside' : 'castles queenside';
+    var txt = (PIECE_NAMES[mv.piece.toUpperCase()] || 'piece') + ' from ' + sqName(mv.from) + ' to ' + sqName(mv.to);
+    if (mv.captured) txt += ', capturing the ' + (PIECE_NAMES[mv.captured.toUpperCase()] || 'piece');
+    if (mv.promo) txt += ', and promotes to a ' + (PIECE_NAMES[mv.promo.toUpperCase()] || 'queen');
+    if (san.indexOf('#') >= 0) txt += ' \u2014 checkmate';
+    else if (san.indexOf('+') >= 0) txt += ' \u2014 check';
+    return txt;
+  }
+  function explainStep(){
+    var rec = rev.rec;
+    if (rev.ply === 0) return {
+      title: 'Starting position',
+      text: 'This is where the game began. Step through the moves below \u2014 each of your moves gets a verdict, a plain-words explanation, and a tip.',
+      advice: '',
+      speak: 'Starting position. Step through the game to hear each of your moves explained.'
+    };
+    var i = rev.ply - 1;
+    var stB = rev.states[i], san = rec.sans[i];
+    var moveNo = Math.floor(i / 2) + 1;
+    var mv = findMoveBySAN(stB, san);
+    var facts = moveFacts(mv, san);
+    var head = moveNo + (stB.turn === 'w' ? '. ' : '\u2026 ') + san;
+    if (stB.turn !== rec.playerColor){
+      return { title: head + ' \u2014 computer',
+        text: 'The computer ' + facts + '. Step on to see your reply.',
+        advice: '',
+        speak: 'Computer played ' + san + '. ' + facts + '.' };
+    }
+    var res = rev.results[i];
+    if (!res){
+      return { title: head, text: rev.analyzing ? 'Analyzing this move\u2026' : 'No analysis for this move.', advice: '', speak: head };
+    }
+    var pawns = (res.loss / 100).toFixed(1).replace(/\.0$/, '');
+    var text = 'You played ' + facts + '. ';
+    var advice = '';
+    var hanging = '';
+    if (mv && !mv.castle){
+      var stA = rev.states[i + 1];
+      if (stA && attacked(stA.board, mv.to, opp(rec.playerColor)) && !attacked(stA.board, mv.to, rec.playerColor))
+        hanging = ' It leaves your ' + (PIECE_NAMES[mv.piece.toUpperCase()] || 'piece') + ' on ' + sqName(mv.to) + ', where it can be taken for free.';
+    }
+    if (res.cls === 'best'){
+      text += 'This was the engine\u2019s top choice \u2014 the strongest move in the position.';
+      advice = 'Tip: moves like this come from asking "what does my opponent want?" before you move.';
+    } else if (res.cls === 'good'){
+      text += 'A solid move, almost as strong as the best (' + res.bestSan + '). It gives up next to nothing.';
+      advice = 'Tip: steady moves like this are how games are won \u2014 no drama, no gifts.';
+    } else if (res.cls === 'inaccuracy'){
+      text += 'Slightly loose: it gives up about ' + pawns + ' of a pawn compared with the best move, ' + res.bestSan + '.' + hanging;
+      advice = 'Tip: before you move, glance at every capture and check \u2014 for both sides. The best move is often hiding there.';
+    } else if (res.cls === 'mistake'){
+      text += 'This one costs about ' + pawns + ' pawns of ground.' + hanging + ' The engine\u2019s move was ' + res.bestSan + '.';
+      advice = 'Tip: once you pick a move, ask "what can my opponent take now?" If the answer hurts, look again.';
+    } else {
+      text += 'A blunder \u2014 about ' + pawns + ' pawns lost in one move.' + hanging + ' The move to find was ' + res.bestSan + '.';
+      advice = 'Tip: most blunders are speed, not knowledge. A five-second scan for hanging pieces prevents almost all of them.';
+    }
+    var clsWord = {best: 'Best move', good: 'Good move', inaccuracy: 'Inaccuracy', mistake: 'Mistake', blunder: 'Blunder'}[res.cls];
+    return { title: head + ' \u2014 ' + clsWord, cls: res.cls, text: text, advice: advice,
+             speak: 'Move ' + moveNo + '. ' + clsWord + '. ' + text + ' ' + advice };
+  }
+  var revSpeakText = '';
+  var speaking = false;
+  function stopSpeak(){
+    if ('speechSynthesis' in window) speechSynthesis.cancel();
+    speaking = false;
+    var b = document.getElementById('revSpeak');
+    if (b) b.textContent = '\uD83D\uDD0A Listen';
+  }
+  function speakReview(){
+    if (!('speechSynthesis' in window)){
+      document.getElementById('revExplain').textContent = 'Voice is not available on this device.';
+      return;
+    }
+    if (speaking){ stopSpeak(); return; }
+    speechSynthesis.cancel();
+    var u = new SpeechSynthesisUtterance(revSpeakText || '');
+    u.rate = 1;
+    speaking = true;
+    document.getElementById('revSpeak').textContent = '\u23F9 Stop';
+    u.onend = u.onerror = function(){ stopSpeak(); };
+    speechSynthesis.speak(u);
+  }
+  document.getElementById('revSpeak').addEventListener('click', speakReview);
+
   function drawReview(){
     if (!rev) return;
     var rec = rev.rec, st = rev.states[rev.ply];
@@ -1337,6 +1444,14 @@ if (typeof document !== 'undefined'){
     }
     document.getElementById('revPrev').disabled = rev.ply <= 0;
     document.getElementById('revNext').disabled = rev.ply >= rec.sans.length;
+    var ex = explainStep();
+    var vd = document.getElementById('revVerdict');
+    vd.textContent = ex.title;
+    vd.className = ex.cls ? 'cls-' + ex.cls : '';
+    document.getElementById('revExplain').textContent = ex.text;
+    document.getElementById('revAdvice').textContent = ex.advice || '';
+    revSpeakText = ex.speak;
+    stopSpeak();
     var spans = document.getElementById('revMoves').querySelectorAll('.mv');
     for (var j = 0; j < spans.length; j++){
       spans[j].className = 'mv' + (parseInt(spans[j].getAttribute('data-ply'), 10) === rev.ply ? ' cur' : '');
@@ -1516,6 +1631,7 @@ if (typeof document !== 'undefined'){
       if (sheetOpen === 'review'){
         if (e.key === 'ArrowLeft' && rev && rev.ply > 0){ rev.ply--; drawReview(); e.preventDefault(); }
         if (e.key === 'ArrowRight' && rev && rev.ply < rev.rec.sans.length){ rev.ply++; drawReview(); e.preventDefault(); }
+        if (e.key === 'Enter' || e.key === ' '){ speakReview(); e.preventDefault(); }
       }
       return;
     }
