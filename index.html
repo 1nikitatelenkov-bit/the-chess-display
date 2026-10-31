@@ -238,7 +238,7 @@
       <h2>🎉 Puzzle solved!</h2>
       <p id="puzzleWinText">You found the mate.</p>
       <div style="display:flex;gap:1.6vmin">
-        <button class="big" id="puzzleWinNext">Next puzzle</button>
+        <button class="big" id="puzzleNext">Next puzzle</button>
         <button class="big alt" id="puzzleWinExit">Exit</button>
       </div>
     </div>
@@ -998,8 +998,9 @@ if (typeof document !== 'undefined'){
       var chk = inCheck(st, st.turn) ? 'Check! ' : '';
       statusEl.textContent = lastSan ? chk + 'Last: ' + lastSan + ' \u00B7 Your move' : 'Your move';
     } else statusEl.textContent = 'Computer to move';
-    document.getElementById('endOverlay').style.display = (gameOver || locked) ? 'flex' : 'none';
-    if (gameOver || locked){
+    var showEnd = (gameOver || locked) && document.getElementById('puzzleWin').style.display !== 'flex';
+    document.getElementById('endOverlay').style.display = showEnd ? 'flex' : 'none';
+    if (showEnd){
       document.getElementById('endTitle').textContent = resultTitle;
       document.getElementById('endText').textContent = resultText;
     }
@@ -1438,13 +1439,13 @@ if (typeof document !== 'undefined'){
   var dlgWasOpen = false;
   function dlgList(){
     if (document.getElementById('puzzleWin').style.display === 'flex')
-      return [document.getElementById('puzzleWinNext'), document.getElementById('puzzleWinExit')];
+      return [document.getElementById('puzzleNext'), document.getElementById('puzzleWinExit')];
     if (document.getElementById('endOverlay').style.display === 'flex')
       return [document.getElementById('againBtn')];
     return null;
   }
   function paintDlg(){
-    var ids = ['puzzleWinNext', 'puzzleWinExit', 'againBtn'];
+    var ids = ['puzzleNext', 'puzzleWinExit', 'againBtn'];
     for (var i = 0; i < ids.length; i++){
       var el = document.getElementById(ids[i]);
       if (el) el.classList.remove('dlgOn');
@@ -2043,10 +2044,6 @@ if (typeof document !== 'undefined'){
   });
   document.getElementById('puzzleWinExit').addEventListener('click', function(){
     if (puzzleMode) exitPuzzle();
-  });
-  document.getElementById('puzzleWinNext').addEventListener('click', function(){
-    document.getElementById('puzzleWin').style.display = 'none';
-    dealRandomPuzzle();
   });
 
   /* ---- Day streak + welcome-back ------------------------------------ */
