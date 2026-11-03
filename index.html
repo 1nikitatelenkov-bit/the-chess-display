@@ -299,7 +299,7 @@
     <div id="menuGrid"></div>
     <button class="backBtn" id="voiceBar" style="width:min(94%,118vmin);margin-top:1.2vmin">🎤 Voice moves · <span id="voiceState">Off</span></button>
     <div class="menuHint">Swipes move · Pinch selects · Shake closes</div>
-    <div class="menuHint" style="opacity:.55">The Chess Display · build Oct 31 v20</div>
+    <div class="menuHint" style="opacity:.55">The Chess Display · build Nov 2 v21</div>
   </div>
   <div class="overlay" id="diffOverlay">
     <div id="diffGrid"></div>
@@ -966,6 +966,8 @@ if (typeof document !== 'undefined'){
   }
 
   function render(){
+    /* the player's own pieces always sit on the bottom row */
+    orientation = playerColor;
     var st = state();
     var legal = gameOver ? [] : legalMoves(st);
     currentLegal = legal;
@@ -1194,7 +1196,7 @@ if (typeof document !== 'undefined'){
     selected = null; gameOver = false; locked = false; thinking = false;
     resultTitle = ''; resultText = '';
     gameSaved = false; savedRec = null;
-    playerColor = takeNextColor();
+    playerColor = 'w';
     orientation = playerColor;
     cursor = playerColor === 'w' ? 52 : 12;
     closePromo();
@@ -2616,7 +2618,7 @@ if (typeof document !== 'undefined'){
 
   applyTheme(theme);
   if (!restoreProgress()){
-    playerColor = takeNextColor();
+    playerColor = 'w';
     orientation = playerColor;
     cursor = playerColor === 'w' ? 52 : 12;
     refresh();
