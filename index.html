@@ -299,7 +299,7 @@
     <div id="menuGrid"></div>
     <button class="backBtn" id="voiceBar" style="width:min(94%,118vmin);margin-top:1.2vmin">🎤 Voice moves · <span id="voiceState">Off</span></button>
     <div class="menuHint">Swipes move · Pinch selects · Shake closes</div>
-    <div class="menuHint" style="opacity:.55">The Chess Display · build Nov 2 v22</div>
+    <div class="menuHint" style="opacity:.55">The Chess Display · build Nov 4 v23</div>
   </div>
   <div class="overlay" id="diffOverlay">
     <div id="diffGrid"></div>
@@ -1967,8 +1967,14 @@ if (typeof document !== 'undefined'){
       voiceRec.lang = 'en-US';
       voiceRec.continuous = false;
       voiceRec.interimResults = false;
-      voiceRec.onresult = function(ev){ handleVoiceCommand(ev.results[0][0].transcript || ''); };
-      voiceRec.onend = function(){ if (voiceOn && voiceRec){ try{ voiceRec.start(); }catch(e){} } };
+      voiceRec.onresult = function(ev){
+        if (!ev.results || !ev.results.length) return;
+        var res = ev.results[ev.results.length - 1];
+        if (res && res[0]) handleVoiceCommand(res[0].transcript || '');
+      };
+      voiceRec.onend = function(){
+        if (voiceOn && voiceRec) setTimeout(function(){ if (voiceOn && voiceRec){ try{ voiceRec.start(); }catch(e){} } }, 250);
+      };
       voiceRec.onerror = function(ev){
         if (ev.error === 'not-allowed' || ev.error === 'service-not-allowed'){ stopVoice(); flashStatus('Microphone is not allowed here'); }
       };
@@ -1984,7 +1990,19 @@ if (typeof document !== 'undefined'){
     renderVoiceBar();
   }
   function handleVoiceCommand(raw){
-    var t = ' ' + raw.toLowerCase().replace(/[^a-z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim() + ' ';
+    /* Speech engines rarely return "e4" — they hear "e four", "knight f
+       three", "bee two". Normalize number words to digits and file-letter
+       homophones to letters before parsing. */
+    var NUMW = { one: '1', two: '2', three: '3', four: '4', five: '5', six: '6', seven: '7', eight: '8' };
+    var FILEW = { ay: 'a', bee: 'b', be: 'b', see: 'c', sea: 'c', dee: 'd', ee: 'e', eff: 'f', ef: 'f', gee: 'g', aitch: 'h' };
+    var toks = raw.toLowerCase().replace(/[^a-z0-9 ]/g, ' ').split(/\s+/);
+    for (var ti = 0; ti < toks.length; ti++){
+      if (NUMW[toks[ti]]) toks[ti] = NUMW[toks[ti]];
+      else if (FILEW[toks[ti]]) toks[ti] = FILEW[toks[ti]];
+      else if (toks[ti] === 'for' && ti > 0 && /^[a-h]$/.test(toks[ti - 1])) toks[ti] = '4';
+    }
+    var norm = toks.join(' ');
+    var t = ' ' + norm + ' ';
     if (welcomeOpen || menuOpen || sheetOpen || resignOpen || pendingPromo) return;
     var st = state();
     if (st.turn !== playerColor || thinking || gameOver || locked){ flashStatus('Not your turn'); return; }
@@ -1997,7 +2015,7 @@ if (typeof document !== 'undefined'){
         if (currentLegal[i].castle && ((currentLegal[i].castle === 'Q' || currentLegal[i].castle === 'q') === wantQ)) move = currentLegal[i];
     }
     if (!move){
-      var clean = raw.toLowerCase(), sqs = [], mm;
+      var clean = norm, sqs = [], mm;
       var re = /([a-h])\s*([1-8])/g;
       while ((mm = re.exec(clean)) !== null) sqs.push((8 - parseInt(mm[2], 10)) * 8 + 'abcdefgh'.indexOf(mm[1]));
       var pieceWords = { knight: 'N', night: 'N', horse: 'N', bishop: 'B', rook: 'R', queen: 'Q', king: 'K', pawn: 'P' };
@@ -2018,7 +2036,7 @@ if (typeof document !== 'undefined'){
         }
       }
     }
-    if (!move){ flashStatus('Did not catch that move'); return; }
+    if (!move){ flashStatus('Did not catch that — try "e4" or "knight f3"'); return; }
     if (move.promo){
       for (i = 0; i < currentLegal.length; i++)
         if (currentLegal[i].from === move.from && currentLegal[i].to === move.to && currentLegal[i].promo === 'Q'){ move = currentLegal[i]; break; }
