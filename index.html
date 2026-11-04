@@ -299,7 +299,7 @@
     <div id="menuGrid"></div>
     <button class="backBtn" id="voiceBar" style="width:min(94%,118vmin);margin-top:1.2vmin">🎤 Voice moves · <span id="voiceState">Off</span></button>
     <div class="menuHint">Swipes move · Pinch selects · Shake closes</div>
-    <div class="menuHint" style="opacity:.55">The Chess Display · build Nov 4 v23</div>
+    <div class="menuHint" style="opacity:.55">The Chess Display · build Nov 4 v24</div>
   </div>
   <div class="overlay" id="diffOverlay">
     <div id="diffGrid"></div>
@@ -1022,7 +1022,10 @@ if (typeof document !== 'undefined'){
       var chk = inCheck(st, st.turn) ? 'Check! ' : '';
       statusEl.textContent = lastSan ? chk + 'Last: ' + lastSan + ' \u00B7 Your move' : 'Your move';
     } else statusEl.textContent = 'Computer to move';
-    var showEnd = (gameOver || locked) && document.getElementById('puzzleWin').style.display !== 'flex';
+    if (!gameOver && !locked) endDismissed = false;
+    var showEnd = (gameOver || locked) && !endDismissed && document.getElementById('puzzleWin').style.display !== 'flex';
+    if (showEnd && !endWasShown) navPush();
+    endWasShown = showEnd;
     document.getElementById('endOverlay').style.display = showEnd ? 'flex' : 'none';
     if (showEnd){
       document.getElementById('endTitle').textContent = resultTitle;
@@ -1166,6 +1169,7 @@ if (typeof document !== 'undefined'){
 
   function openPromo(cands){
     pendingPromo = cands;
+    navPush();
     var row = document.getElementById('promoRow');
     row.innerHTML = '';
     var promos = ['Q', 'R', 'B', 'N'];
@@ -1190,12 +1194,15 @@ if (typeof document !== 'undefined'){
     document.getElementById('promoOverlay').style.display = 'flex';
   }
   function closePromo(){
+    var wasOpen = pendingPromo;
     pendingPromo = null;
     document.getElementById('promoOverlay').style.display = 'none';
+    if (wasOpen) navSyncPop();
   }
 
   function newGame(color){
     gameGen++;
+    navPush();
     gameLog = [{state: initialState(), from: -1, to: -1, san: null}];
     selected = null; gameOver = false; locked = false; thinking = false;
     resultTitle = ''; resultText = '';
@@ -1231,15 +1238,18 @@ if (typeof document !== 'undefined'){
 
   /* ---- Sheets (history / review) ---- */
   function closeSheets(){
+    var wasOpen = sheetOpen;
     sheetOpen = null;
     stopSpeak();
     document.getElementById('historySheet').style.display = 'none';
     document.getElementById('reviewSheet').style.display = 'none';
     document.getElementById('puzzleSheet').style.display = 'none';
+    if (wasOpen) navSyncPop();
   }
 
   function openHistory(){
     sheetOpen = 'history';
+    navPush();
     document.getElementById('historySheet').style.display = 'flex';
     renderHistory();
   }
@@ -1278,6 +1288,7 @@ if (typeof document !== 'undefined'){
 
   function openReview(rec){
     sheetOpen = 'review';
+    navPush();
     document.getElementById('reviewSheet').style.display = 'flex';
     rev = { rec: rec, states: rec.fens.map(function(f){ return parseFEN(f); }),
             results: {}, ply: 0, analyzing: true };
@@ -1478,6 +1489,7 @@ if (typeof document !== 'undefined'){
     if (puzzleMode) exitPuzzle(); else openSidePicker();
   });
   document.getElementById('againBtn').addEventListener('click', function(){
+    if (document.getElementById('endOverlay').style.display === 'flex') navSyncPop();
     if (puzzleMode) exitPuzzle(); else openSidePicker();
   });
   document.getElementById('undoBtn').addEventListener('click', function(){
@@ -1517,12 +1529,15 @@ if (typeof document !== 'undefined'){
     }
     resignOpen = true;
     document.getElementById('resignOverlay').style.display = 'flex';
+    navPush();
   });
   document.getElementById('resignNo').addEventListener('click', function(){
+    if (resignOpen) navSyncPop();
     resignOpen = false;
     document.getElementById('resignOverlay').style.display = 'none';
   });
   document.getElementById('resignYes').addEventListener('click', function(){
+    if (resignOpen) navSyncPop();
     resignOpen = false;
     document.getElementById('resignOverlay').style.display = 'none';
     if (thinking || gameOver || locked) return;
@@ -1541,8 +1556,10 @@ if (typeof document !== 'undefined'){
     }
     list.innerHTML = html || '<div>No moves yet.</div>';
     document.getElementById('movesOverlay').style.display = 'flex';
+    navPush();
   });
   document.getElementById('movesClose').addEventListener('click', function(){
+    if (movesOpen()) navSyncPop();
     document.getElementById('movesOverlay').style.display = 'none';
   });
   document.getElementById('historyBtn').addEventListener('click', openHistory);
@@ -1762,8 +1779,72 @@ if (typeof document !== 'undefined'){
       grid.appendChild(el);
     });
   }
+  /* ---- Middle-pinch Back (the Meta shell contract): the glasses give
+     the page no Back key. A thumb-to-middle pinch makes the shell call
+     history.back() when an entry exists; with none left it opens Meta's
+     universal menu (Restart / Resume / Permissions), and Back again
+     there exits. So navigation is built on history: the root is
+     replaceState'd, a session entry is held while a game/puzzle runs,
+     and every screen owns a temporary same-URL entry while open.
+     popstate steps back exactly ONE logical level, state-driven by
+     what is actually on screen. Nothing is ever pushed inside the
+     popstate handler, UI closes consume their own entry through a
+     suppressed history.back(), and the stack stays shallow (the shell
+     caps history at 5 entries) so the root always drains to Meta's
+     menu. ---- */
+  var navDepth = 0, navSuppress = 0, navInPop = false;
+  var endDismissed = false, endWasShown = false;
+  var sideFromDiff = false, bootNavPending = false;
+  function navPush(){
+    if (navInPop || navDepth >= 4) return;
+    try{ history.pushState({ chessNav: navDepth + 1 }, ''); navDepth++; }catch(e){}
+  }
+  function navSyncPop(){
+    if (navInPop || navDepth <= 0) return;
+    if (typeof history === 'undefined' || !history.back) return;
+    navSuppress++;
+    try{ history.back(); }catch(e){ navSuppress--; }
+  }
+  function onPopState(){
+    if (navSuppress > 0){ navSuppress--; navDepth = Math.max(0, navDepth - 1); return; }
+    navDepth = Math.max(0, navDepth - 1);
+    navInPop = true;
+    try{
+      if (resignOpen){ document.getElementById('resignNo').click(); }
+      else if (pendingPromo){ closePromo(); }
+      else if (movesOpen()){ document.getElementById('movesClose').click(); }
+      else if (document.getElementById('puzzleWin').style.display === 'flex'){
+        document.getElementById('puzzleWin').style.display = 'none';
+      }
+      else if (document.getElementById('endOverlay').style.display === 'flex'){
+        endDismissed = true;
+        document.getElementById('endOverlay').style.display = 'none';
+      }
+      else if (sheetOpen === 'review'){
+        document.getElementById('reviewSheet').style.display = 'none';
+        document.getElementById('historySheet').style.display = 'flex';
+        sheetOpen = 'history';
+      }
+      else if (sheetOpen){ closeSheets(); }
+      else if (document.getElementById('sideOverlay').style.display === 'flex'){
+        document.getElementById('sideOverlay').style.display = 'none';
+        if (sideFromDiff){
+          sideFromDiff = false;
+          renderDiffTiles();
+          document.getElementById('diffOverlay').style.display = 'flex';
+          setZone('diff');
+        } else setZone('board');
+      }
+      else if (document.getElementById('diffOverlay').style.display === 'flex'){ backToMenu(); }
+      else if (document.getElementById('colorOverlay').style.display === 'flex'){ backToMenu(); }
+      else if (menuOpen){ closeMenu(); }
+      else { openMenu(); } /* the session entry popped: land on the tile menu, the pause hub */
+    }catch(e){}
+    navInPop = false;
+  }
   function openMenu(){
     if (menuOpen || welcomeOpen) return;
+    navPush();
     menuTiles = buildMenuTiles();
     menuIdx = 0;
     voiceFocus = false;
@@ -1773,12 +1854,14 @@ if (typeof document !== 'undefined'){
     renderVoiceBar();
   }
   function closeMenu(){
+    var wasOpen = menuOpen;
     voiceFocus = false;
     document.getElementById('menuOverlay').style.display = 'none';
     document.getElementById('diffOverlay').style.display = 'none';
     document.getElementById('colorOverlay').style.display = 'none';
     document.getElementById('sideOverlay').style.display = 'none';
     setZone('board');
+    if (wasOpen) navSyncPop();
   }
   function backToMenu(){
     diffBackFocus = false;
@@ -1817,7 +1900,7 @@ if (typeof document !== 'undefined'){
   }
   function pickDifficulty(){
     setDifficulty(DIFF_ORDER[diffIdx]);
-    openSidePicker();
+    openSidePicker(true);
   }
   /* ---- Side picker: before every new game, ask White / Black / Random.
      Whichever side he picks sits on the bottom row (orientation follows
@@ -1834,8 +1917,9 @@ if (typeof document !== 'undefined'){
       grid.appendChild(el);
     });
   }
-  function openSidePicker(){
+  function openSidePicker(fromDiff){
     sideIdx = 0;
+    sideFromDiff = !!fromDiff;
     document.getElementById('menuOverlay').style.display = 'none';
     document.getElementById('diffOverlay').style.display = 'none';
     document.getElementById('colorOverlay').style.display = 'none';
@@ -1844,8 +1928,11 @@ if (typeof document !== 'undefined'){
     renderSideTiles();
     document.getElementById('sideOverlay').style.display = 'flex';
     setZone('side');
+    navPush();
   }
   function pickSide(){
+    if (document.getElementById('sideOverlay').style.display === 'flex') navSyncPop();
+    sideFromDiff = false;
     var pick = SIDE_ORDER[sideIdx];
     var color = pick === 'r' ? (Math.random() < 0.5 ? 'w' : 'b') : pick;
     document.getElementById('sideOverlay').style.display = 'none';
@@ -2231,6 +2318,7 @@ if (typeof document !== 'undefined'){
   /* ---- Dealing + play ---- */
   var currentPuzzle = null; /* {fen, mateIn} */
   function startPuzzleDeal(pz){
+    navPush();
     currentPuzzle = pz;
     var st = parseFEN(pz.fen);
     gameGen++;
@@ -2280,6 +2368,7 @@ if (typeof document !== 'undefined'){
       ' · Solved ' + loadPz().count;
   }
   function exitPuzzle(){
+    if (document.getElementById('puzzleWin').style.display === 'flex') navSyncPop();
     puzzleMode = false;
     currentPuzzle = null;
     document.getElementById('stage').classList.remove('puzzling');
@@ -2338,6 +2427,7 @@ if (typeof document !== 'undefined'){
     document.getElementById('puzzleWinText').textContent =
       'You have solved ' + pzd.count + ' puzzle' + (pzd.count === 1 ? '' : 's') + '. The next one is brand new.';
     document.getElementById('puzzleWin').style.display = 'flex';
+    navPush();
     document.getElementById('status').textContent = 'Puzzle solved!';
     updatePuzzleBar();
     beep(784, 0.1, 'sine', 0.04);
@@ -2352,6 +2442,7 @@ if (typeof document !== 'undefined'){
     if (puzzleMode) exitPuzzle();
   });
   document.getElementById('puzzleNext').addEventListener('click', function(){
+    if (document.getElementById('puzzleWin').style.display === 'flex') navSyncPop();
     document.getElementById('puzzleWin').style.display = 'none';
     dealRandomPuzzle();
   });
@@ -2359,6 +2450,7 @@ if (typeof document !== 'undefined'){
     if (puzzleMode) exitPuzzle();
   });
   document.getElementById('puzzleAgain').addEventListener('click', function(){
+    if (document.getElementById('puzzleWin').style.display === 'flex') navSyncPop();
     document.getElementById('puzzleWin').style.display = 'none';
     if (puzzleMode && currentPuzzle) startPuzzleDeal(currentPuzzle);
   });
@@ -2416,6 +2508,7 @@ if (typeof document !== 'undefined'){
     if (!welcomeOpen) return;
     welcomeOpen = false;
     document.getElementById('welcomeOverlay').style.display = 'none';
+    if (bootNavPending){ bootNavPending = false; navPush(); }
     if (sideAskPending){ sideAskPending = false; openSidePicker(); }
   }
   document.getElementById('welcomeBtn').addEventListener('click', dismissWelcome);
@@ -2685,15 +2778,21 @@ if (typeof document !== 'undefined'){
   }
 
   applyTheme(theme);
+  /* Middle-pinch Back setup: mark the root, then hold one session entry
+     so Back from the board lands on the tile menu (the pause hub)
+     instead of leaving the app. Back at the root reaches Meta's menu. */
+  try{ history.replaceState({ chessRoot: true }, ''); }catch(e){}
+  window.addEventListener('popstate', onPopState);
   if (!restoreProgress()){
     playerColor = 'w';
     orientation = playerColor;
     cursor = playerColor === 'w' ? 52 : 12;
     refresh();
     /* a fresh start always asks for a side first (after the welcome, if it shows) */
-    if (welcomeOpen) sideAskPending = true;
-    else openSidePicker();
-  }
+    if (welcomeOpen){ bootNavPending = true; sideAskPending = true; }
+    else { navPush(); openSidePicker(); }
+  } else if (welcomeOpen) bootNavPending = true;
+  else navPush();
 }
 
 </script>
