@@ -46,7 +46,7 @@
   .sq.check::before{content:'';position:absolute;inset:0;z-index:1;
                     background:radial-gradient(circle,rgba(255,55,35,.9) 15%,rgba(255,55,35,0) 72%)}
   .sq.cursor{box-shadow:inset 0 0 0 .55vmin #ffb300;z-index:3}
-  .pc{position:absolute;inset:6%;z-index:2;pointer-events:none}
+  .pc{position:absolute;inset:6%;z-index:2;pointer-events:none;filter:drop-shadow(var(--pcsh,0 0 0 rgba(0,0,0,0)))}
   .pc svg{width:100%;height:100%;display:block;filter:drop-shadow(0 .2vmin .25vmin rgba(0,0,0,.35))}
   .coord{position:absolute;font-size:1.45vmin;font-weight:700;z-index:2;pointer-events:none}
   .coord.rank{top:.3vmin;left:.4vmin}
@@ -150,7 +150,7 @@
   @keyframes boardShake{0%,100%{transform:translateX(0)}20%{transform:translateX(-1.2vmin)}40%{transform:translateX(1.2vmin)}60%{transform:translateX(-.8vmin)}80%{transform:translateX(.8vmin)}}
 
   /* ---- Left rail, tile menus, clocks (his layouts) ---- */
-  #main{flex:1;min-width:0;display:flex;flex-direction:column;gap:.7vmin;padding:1vmin}
+  #main{flex:1;min-width:0;display:flex;flex-direction:column;gap:.7vmin;padding:1vmin;perspective:85vmin}
   #rail{width:15.5vmin;min-width:58px;flex:0 0 auto;display:flex;flex-direction:column;
         background-color:#241b11;border-right:.4vmin solid #171208;z-index:5}
   .railBtn{flex:1;display:flex;align-items:center;justify-content:center;text-align:center;
@@ -301,7 +301,7 @@
     <div id="menuGrid"></div>
     <button class="backBtn" id="voiceBar" style="width:min(94%,118vmin);margin-top:1.2vmin">🎤 Voice moves · <span id="voiceState">Off</span></button>
     <div class="menuHint">Swipes move · Pinch selects · Shake closes</div>
-    <div class="menuHint" style="opacity:.55">The Chess Display · build Nov 4 v25</div>
+    <div class="menuHint" style="opacity:.55">The Chess Display · build Nov 4 v26</div>
   </div>
   <div class="overlay" id="diffOverlay">
     <div id="diffGrid"></div>
@@ -1815,6 +1815,10 @@ if (typeof document !== 'undefined'){
       add('Hint', '', closeThen('hintBtn'));
       add('Exit puzzle', '', closeThen('puzzleExit'));
       add('Board color', '', function(){ openColors(); });
+      add('3D tilt', tiltOn ? 'On' : 'Off', function(){
+        setTilt(!tiltOn);
+        setTimeout(function(){ if (uiZone === 'menu') renderTiles(); }, 60);
+      });
       add('Close menu', '', function(){ closeMenu(); });
     } else {
       add('New game', '', function(){ openDiffs(); });
@@ -1824,6 +1828,10 @@ if (typeof document !== 'undefined'){
       add('Head gestures', headOn ? 'On' : 'Off', function(){
         document.getElementById('headBtn').click();
         setTimeout(function(){ if (uiZone === 'menu') renderTiles(); }, 500);
+      });
+      add('3D tilt', tiltOn ? 'On' : 'Off', function(){
+        setTilt(!tiltOn);
+        setTimeout(function(){ if (uiZone === 'menu') renderTiles(); }, 60);
       });
       add('Close menu', '', function(){ closeMenu(); });
     }
@@ -2062,11 +2070,13 @@ if (typeof document !== 'undefined'){
       if (voiceFocus){
         if (dy < 0){ voiceFocus = false; renderTiles(); renderVoiceBar(); }
       } else {
+        var rows = Math.ceil(menuTiles.length / 3);
         var col = menuIdx % 3, row = (menuIdx / 3) | 0;
-        if (dy > 0 && row === 1){ voiceFocus = true; renderTiles(); renderVoiceBar(); }
+        if (dy > 0 && row === rows - 1){ voiceFocus = true; renderTiles(); renderVoiceBar(); }
         else {
-          col = Math.max(0, Math.min(2, col + dx));
-          row = Math.max(0, Math.min(1, row + dy));
+          row = Math.max(0, Math.min(rows - 1, row + dy));
+          var rowTiles = row === rows - 1 ? menuTiles.length - 3 * (rows - 1) : 3;
+          col = Math.max(0, Math.min(rowTiles - 1, col + dx));
           menuIdx = row * 3 + col;
           renderTiles();
         }
@@ -2781,6 +2791,60 @@ if (typeof document !== 'undefined'){
     tracker.start().then(function(ok){ headOn = ok; setHeadLabel(); });
   });
   setHeadLabel();
+
+  /* ---- 3D tilt: the board floats in space. Turn or nod your head and
+     the board tips a few degrees with you — deliberately capped at 5°
+     with a dead zone and smoothing, so it reads as depth, never as
+     distortion. Off by default; the menu's "3D tilt" tile turns it on
+     and the choice persists. Sensor handling mirrors the head-gesture
+     tracker, including the iOS permission ask. The whole board box
+     (frame + board + pieces) tips as one rigid object; the bars, rail
+     and status stay flat, and its shadow + the pieces' drop shadow
+     shift with the angle to sell the float. ---- */
+  var tiltOn = false;
+  try{ tiltOn = localStorage.getItem('glasschess.tilt') === '1'; }catch(e){}
+  var tiltBase = null, tiltX = 0, tiltY = 0, tiltListening = false;
+  function onTiltOrient(e){
+    if (e.beta === null || e.beta === undefined || e.alpha === null || e.alpha === undefined) return;
+    if (!tiltBase){ tiltBase = { a: e.alpha, b: e.beta }; return; }
+    var dA = ((e.alpha - tiltBase.a + 540) % 360) - 180;
+    var dB = e.beta - tiltBase.b;
+    if (Math.abs(dA) < 1.2) dA = 0;
+    if (Math.abs(dB) < 1.2) dB = 0;
+    var tY = Math.max(-5, Math.min(5, -dA * 0.3));
+    var tX = Math.max(-5, Math.min(5, dB * 0.3));
+    tiltX += (tX - tiltX) * 0.25;
+    tiltY += (tY - tiltY) * 0.25;
+    var box = document.getElementById('boardBox');
+    box.style.transform = 'rotateX(' + tiltX.toFixed(2) + 'deg) rotateY(' + tiltY.toFixed(2) + 'deg)';
+    box.style.boxShadow = (-tiltY * 0.35).toFixed(2) + 'vmin ' + (1 + tiltX * 0.35).toFixed(2) + 'vmin 3vmin rgba(0,0,0,.55)';
+    box.style.setProperty('--pcsh', (-tiltY * 0.06).toFixed(3) + 'vmin ' + (0.16 + tiltX * 0.06).toFixed(3) + 'vmin .1vmin rgba(0,0,0,.4)');
+  }
+  function startTilt(){
+    if (tiltListening) return;
+    if (typeof DeviceOrientationEvent === 'undefined') return;
+    var add = function(){
+      window.addEventListener('deviceorientation', onTiltOrient, true);
+      tiltListening = true;
+    };
+    if (typeof DeviceOrientationEvent.requestPermission === 'function'){
+      DeviceOrientationEvent.requestPermission().then(function(r){ if (r === 'granted') add(); }).catch(function(){});
+    } else add();
+  }
+  function stopTilt(){
+    if (tiltListening){ window.removeEventListener('deviceorientation', onTiltOrient, true); tiltListening = false; }
+    tiltBase = null; tiltX = 0; tiltY = 0;
+    var box = document.getElementById('boardBox');
+    box.style.transform = '';
+    box.style.boxShadow = '';
+    box.style.setProperty('--pcsh', '0 0 0 rgba(0,0,0,0)');
+  }
+  function setTilt(on){
+    tiltOn = !!on;
+    try{ localStorage.setItem('glasschess.tilt', tiltOn ? '1' : '0'); }catch(e){}
+    if (tiltOn) startTilt(); else stopTilt();
+  }
+  if (tiltOn) startTilt();
 
   /* ---- Saved game: an accidental exit to the Meta menu (or any close)
      must not cost the game. The position is written on every refresh
