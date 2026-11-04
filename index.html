@@ -151,11 +151,22 @@
 
   /* ---- Left rail, tile menus, clocks (his layouts) ---- */
   #main{flex:1;min-width:0;display:flex;flex-direction:column;gap:.7vmin;padding:1vmin;perspective:85vmin}
-  #rail{width:15.5vmin;min-width:58px;flex:0 0 auto;display:flex;flex-direction:column;
-        background-color:#241b11;border-right:.4vmin solid #171208;z-index:5}
-  .railBtn{flex:1;display:flex;align-items:center;justify-content:center;text-align:center;
+  /* Collapsible rail (Mail Display pattern): a slim icons-only strip,
+     tiles anchored at the TOP. When the rail zone takes focus — or the
+     mouse hovers on desktop — it expands as an overlay drawer with
+     labels; the board underneath never reflows or resizes. */
+  #rail{position:absolute;left:0;top:0;bottom:0;width:6.8vmin;min-width:40px;z-index:5;
+        display:flex;flex-direction:column;background-color:#241b11;
+        border-right:.4vmin solid #171208;overflow:hidden;
+        transition:width .15s ease, box-shadow .15s ease}
+  #rail.open, #rail:hover{width:28vmin;min-width:150px;box-shadow:1.2vmin 0 3vmin rgba(0,0,0,.5)}
+  .railBtn{flex:0 0 auto;height:11vmin;display:flex;align-items:center;gap:1.4vmin;
            background:transparent;border:none;border-bottom:1px solid rgba(255,255,255,.07);
-           color:#e8e6e1;font-size:2.3vmin;font-weight:600;cursor:pointer;font-family:inherit;padding:0 .5vmin;line-height:1.2}
+           color:#e8e6e1;font-size:2.6vmin;font-weight:600;cursor:pointer;font-family:inherit;
+           padding:0 1.1vmin;line-height:1.2;text-align:left;white-space:nowrap}
+  .railBtn .ric{font-size:4.4vmin;width:4.5vmin;text-align:center;flex:0 0 auto}
+  .railBtn .rlab{opacity:0;transition:opacity .12s ease}
+  #rail.open .rlab, #rail:hover .rlab{opacity:1}
   .railBtn:last-child{border-bottom:none}
   .railBtn:active{background:#3a2c1a}
   .railBtn.on{background:#739552;color:#fff;box-shadow:inset 0 0 0 .5vmin #ffb300}
@@ -198,10 +209,10 @@
 <body>
 <div id="stage">
   <div id="rail">
-    <button class="railBtn" id="railHint">Hint</button>
-    <button class="railBtn" id="railUndo">Undo</button>
-    <button class="railBtn" id="railResign">Resign</button>
-    <button class="railBtn" id="railMenu">Menu</button>
+    <button class="railBtn" id="railHint"><span class="ric">💡</span><span class="rlab">Hint</span></button>
+    <button class="railBtn" id="railUndo"><span class="ric">↩</span><span class="rlab">Undo</span></button>
+    <button class="railBtn" id="railResign"><span class="ric">⚑</span><span class="rlab" id="railResignLab">Resign</span></button>
+    <button class="railBtn" id="railMenu"><span class="ric">☰</span><span class="rlab">Menu</span></button>
   </div>
   <div id="main">
   <div class="bar" id="topBar">
@@ -301,7 +312,7 @@
     <div id="menuGrid"></div>
     <button class="backBtn" id="voiceBar" style="width:min(94%,118vmin);margin-top:1.2vmin">🎤 Voice moves · <span id="voiceState">Off</span></button>
     <div class="menuHint">Swipes move · Pinch selects · Shake closes</div>
-    <div class="menuHint" style="opacity:.55">The Chess Display · build Nov 4 v26</div>
+    <div class="menuHint" style="opacity:.55">The Chess Display · build Nov 4 v27</div>
   </div>
   <div class="overlay" id="diffOverlay">
     <div id="diffGrid"></div>
@@ -1044,7 +1055,7 @@ if (typeof document !== 'undefined'){
     document.getElementById('railUndo').disabled = thinking || gameLog.length <= 1;
     document.getElementById('railHint').disabled = thinking || gameOver || locked;
     var railResign = document.getElementById('railResign');
-    railResign.textContent = puzzleMode ? 'Exit' : 'Resign';
+    document.getElementById('railResignLab').textContent = puzzleMode ? 'Exit' : 'Resign';
     railResign.disabled = puzzleMode ? false : (thinking || gameOver || locked);
     renderRail();
   }
@@ -1769,6 +1780,8 @@ if (typeof document !== 'undefined'){
   function setZone(z){
     uiZone = z;
     menuOpen = (z === 'menu' || z === 'diff' || z === 'color' || z === 'side');
+    var railEl = document.getElementById('rail');
+    if (z === 'rail') railEl.classList.add('open'); else railEl.classList.remove('open');
     renderRail();
   }
   function renderRail(){
@@ -1778,12 +1791,12 @@ if (typeof document !== 'undefined'){
     }
   }
   function enterRail(row){
-    railIdx = Math.max(0, Math.min(4, Math.round(row * 4 / 7)));
+    railIdx = Math.max(0, Math.min(RAIL_IDS.length - 1, Math.round(row * 4 / 7)));
     setZone('rail');
     beep(660, 0.05, 'sine', 0.03);
   }
   function railMove(d){
-    railIdx = Math.max(0, Math.min(4, railIdx + d));
+    railIdx = Math.max(0, Math.min(RAIL_IDS.length - 1, railIdx + d));
     renderRail();
     beep(660, 0.05, 'sine', 0.03);
   }
