@@ -86,6 +86,7 @@
   .overlay .big.dlgOn{box-shadow:0 0 0 .55vmin #ffb300}
   #promoRow{display:flex;gap:1.6vmin}
   .promoBtn{width:12vmin;height:12vmin;border-radius:1.4vmin;background:#3a372f;border:none;cursor:pointer;padding:1.2vmin}
+  .promoBtn.on{box-shadow:0 0 0 .55vmin #ffb300}
   .promoBtn svg{width:100%;height:100%}
   #movesList{overflow-y:auto;width:100%;flex:1;font-size:2.4vmin;line-height:1.75;color:#e8e6e1;padding:0 1vmin}
   #movesList b{color:#a49f92;font-weight:600}
@@ -96,6 +97,7 @@
   .ghostBtn{flex:0 0 auto;background:#3a372f;color:#e8e6e1;border:none;border-radius:1.1vmin;padding:1.2vmin 1.8vmin;font-size:2.1vmin;font-weight:600;cursor:pointer;font-family:inherit}
   #histList{flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:1vmin}
   .hrow{display:flex;align-items:center;gap:1.2vmin;background:#322f29;border-radius:1.2vmin;padding:1.5vmin 1.6vmin}
+  .hrow.on{box-shadow:0 0 0 .55vmin #ffb300}
   .hmain{flex:1;min-width:0}
   .htitle{font-size:2.6vmin;font-weight:700}
   .hsub{font-size:2.1vmin;color:#a49f92}
@@ -299,7 +301,7 @@
     <div id="menuGrid"></div>
     <button class="backBtn" id="voiceBar" style="width:min(94%,118vmin);margin-top:1.2vmin">🎤 Voice moves · <span id="voiceState">Off</span></button>
     <div class="menuHint">Swipes move · Pinch selects · Shake closes</div>
-    <div class="menuHint" style="opacity:.55">The Chess Display · build Nov 4 v24</div>
+    <div class="menuHint" style="opacity:.55">The Chess Display · build Nov 4 v25</div>
   </div>
   <div class="overlay" id="diffOverlay">
     <div id="diffGrid"></div>
@@ -1167,6 +1169,19 @@ if (typeof document !== 'undefined'){
     render();
   }
 
+  var promoIdx = 0;
+  function paintPromo(){
+    var row = document.getElementById('promoRow');
+    for (var i = 0; i < row.children.length; i++)
+      row.children[i].className = 'promoBtn' + (i === promoIdx ? ' on' : '');
+  }
+  function promoMove(d){
+    var row = document.getElementById('promoRow');
+    if (!row.children.length) return;
+    promoIdx = Math.max(0, Math.min(row.children.length - 1, promoIdx + d));
+    paintPromo();
+    beep(660, 0.05, 'sine', 0.03);
+  }
   function openPromo(cands){
     pendingPromo = cands;
     navPush();
@@ -1192,6 +1207,8 @@ if (typeof document !== 'undefined'){
       })(promos[i]);
     }
     document.getElementById('promoOverlay').style.display = 'flex';
+    promoIdx = 0;
+    paintPromo();
   }
   function closePromo(){
     var wasOpen = pendingPromo;
@@ -1249,14 +1266,33 @@ if (typeof document !== 'undefined'){
 
   function openHistory(){
     sheetOpen = 'history';
+    histIdx = 0;
     navPush();
     document.getElementById('historySheet').style.display = 'flex';
     renderHistory();
+  }
+  var histIdx = 0, histRows = [];
+  function paintHist(){
+    for (var i = 0; i < histRows.length; i++)
+      histRows[i].row.className = 'hrow' + (i === histIdx ? ' on' : '');
+    var cur = histRows[histIdx];
+    if (cur && cur.row.scrollIntoView){ try{ cur.row.scrollIntoView({ block: 'nearest' }); }catch(e){} }
+  }
+  function histMove(d){
+    if (!histRows.length) return;
+    histIdx = Math.max(0, Math.min(histRows.length - 1, histIdx + d));
+    paintHist();
+    beep(660, 0.05, 'sine', 0.03);
+  }
+  function histActivate(){
+    var cur = histRows[histIdx];
+    if (cur) cur.btn.click();
   }
   function renderHistory(){
     var games = loadGames();
     var list = document.getElementById('histList');
     list.innerHTML = '';
+    histRows = [];
     if (!games.length){
       list.innerHTML = '<div class="hempty">No finished games yet.<br>Finish a game and it will be saved here for review.</div>';
       return;
@@ -1283,7 +1319,10 @@ if (typeof document !== 'undefined'){
       });
       row.appendChild(rb); row.appendChild(db);
       list.appendChild(row);
+      histRows.push({ row: row, btn: rb });
     });
+    if (histIdx >= histRows.length) histIdx = Math.max(0, histRows.length - 1);
+    paintHist();
   }
 
   function openReview(rec){
@@ -1521,6 +1560,12 @@ if (typeof document !== 'undefined'){
       setTimeout(function(){ hintFrom = -1; hintTo = -1; render(); }, 1400);
     }
   });
+  var resignIdx = 1; /* 0 = Yes, resign · 1 = Keep playing (the safe default) */
+  function paintResign(){
+    var y = document.getElementById('resignYes'), n = document.getElementById('resignNo');
+    if (resignIdx === 0){ y.classList.add('dlgOn'); n.classList.remove('dlgOn'); }
+    else { n.classList.add('dlgOn'); y.classList.remove('dlgOn'); }
+  }
   document.getElementById('resignBtn').addEventListener('click', function(){
     if (thinking || gameOver || locked) return;
     if (puzzleMode){
@@ -1528,6 +1573,8 @@ if (typeof document !== 'undefined'){
       return;
     }
     resignOpen = true;
+    resignIdx = 1;
+    paintResign();
     document.getElementById('resignOverlay').style.display = 'flex';
     navPush();
   });
@@ -1641,24 +1688,39 @@ if (typeof document !== 'undefined'){
     }
     if (sheetOpen){
       if (e.key === 'Escape'){ closeSheets(); return; }
+      if (sheetOpen === 'history'){
+        if (e.key === 'ArrowUp' || e.key === 'ArrowLeft'){ histMove(-1); e.preventDefault(); }
+        else if (e.key === 'ArrowDown' || e.key === 'ArrowRight'){ histMove(1); e.preventDefault(); }
+        else if (e.key === 'Enter' || e.key === ' '){ histActivate(); e.preventDefault(); }
+      }
       if (sheetOpen === 'review'){
-        if (e.key === 'ArrowLeft' && rev && rev.ply > 0){ rev.ply--; drawReview(); e.preventDefault(); }
-        if (e.key === 'ArrowRight' && rev && rev.ply < rev.rec.sans.length){ rev.ply++; drawReview(); e.preventDefault(); }
+        if ((e.key === 'ArrowLeft' || e.key === 'ArrowUp') && rev && rev.ply > 0){ rev.ply--; drawReview(); e.preventDefault(); }
+        if ((e.key === 'ArrowRight' || e.key === 'ArrowDown') && rev && rev.ply < rev.rec.sans.length){ rev.ply++; drawReview(); e.preventDefault(); }
         if (e.key === 'Enter' || e.key === ' '){ speakReview(); e.preventDefault(); }
       }
       return;
     }
     if (resignOpen){
-      if (e.key === 'Escape'){
-        resignOpen = false;
-        document.getElementById('resignOverlay').style.display = 'none';
-      } else if (e.key === 'Enter' || e.key === ' '){
-        document.getElementById('resignYes').click();
+      if (e.key === 'Escape'){ document.getElementById('resignNo').click(); }
+      else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp'){ resignIdx = 0; paintResign(); beep(660, 0.05, 'sine', 0.03); e.preventDefault(); }
+      else if (e.key === 'ArrowRight' || e.key === 'ArrowDown'){ resignIdx = 1; paintResign(); beep(660, 0.05, 'sine', 0.03); e.preventDefault(); }
+      else if (e.key === 'Enter' || e.key === ' '){
+        document.getElementById(resignIdx === 0 ? 'resignYes' : 'resignNo').click();
         e.preventDefault();
       }
       return;
     }
-    if (pendingPromo){ if (e.key === 'Escape') closePromo(); return; }
+    if (pendingPromo){
+      if (e.key === 'Escape') closePromo();
+      else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp'){ promoMove(-1); e.preventDefault(); }
+      else if (e.key === 'ArrowRight' || e.key === 'ArrowDown'){ promoMove(1); e.preventDefault(); }
+      else if (e.key === 'Enter' || e.key === ' '){
+        var pr = document.getElementById('promoRow');
+        if (pr.children[promoIdx]) pr.children[promoIdx].click();
+        e.preventDefault();
+      }
+      return;
+    }
     if (uiZone === 'rail'){
       if (e.key === 'ArrowUp'){ railMove(-1); e.preventDefault(); }
       else if (e.key === 'ArrowDown'){ railMove(1); e.preventDefault(); }
@@ -1969,7 +2031,8 @@ if (typeof document !== 'undefined'){
   }
   function menuMove(dx, dy){
     if (uiZone === 'side'){
-      sideIdx = Math.max(0, Math.min(2, sideIdx + dx));
+      /* one row of three: Left/Right walk it, Up/Down walk it too */
+      sideIdx = Math.max(0, Math.min(2, sideIdx + dx + dy));
       renderSideTiles();
       beep(660, 0.05, 'sine', 0.03);
       return;
@@ -2669,10 +2732,10 @@ if (typeof document !== 'undefined'){
   tracker.on('nod-yes', function(){
     console.log('User nodded yes');
     if (welcomeOpen){ dismissWelcome(); return; }
-    if (resignOpen){ document.getElementById('resignYes').click(); return; }
+    if (resignOpen){ document.getElementById(resignIdx === 0 ? 'resignYes' : 'resignNo').click(); return; }
     if (pendingPromo){
       var pr = document.getElementById('promoRow');
-      if (pr.children.length) pr.children[0].click();
+      if (pr.children.length) pr.children[Math.min(promoIdx, pr.children.length - 1)].click();
       return;
     }
     if (dlgList()){ dlgActivate(); return; }
