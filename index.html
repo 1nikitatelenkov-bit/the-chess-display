@@ -243,7 +243,10 @@
     <div class="overlay" id="endOverlay">
       <h2 id="endTitle"></h2>
       <p id="endText"></p>
-      <button class="big" id="againBtn">New game</button>
+      <div style="display:flex;gap:1.6vmin">
+        <button class="big" id="againBtn">New game</button>
+        <button class="big alt" id="endReviewBtn">Review game</button>
+      </div>
     </div>
     <div class="overlay" id="resignOverlay">
       <h2>Are you sure?</h2>
@@ -312,7 +315,7 @@
     <div id="menuGrid"></div>
     <button class="backBtn" id="voiceBar" style="width:min(94%,118vmin);margin-top:1.2vmin">🎤 Voice moves · <span id="voiceState">Off</span></button>
     <div class="menuHint">Swipes move · Pinch selects · Shake closes</div>
-    <div class="menuHint" style="opacity:.55">The Chess Display · build Nov 5 v30</div>
+    <div class="menuHint" style="opacity:.55">The Chess Display · build Nov 5 v31</div>
   </div>
   <div class="overlay" id="diffOverlay">
     <div id="diffGrid"></div>
@@ -1268,6 +1271,7 @@ if (typeof document !== 'undefined'){
   function closeSheets(){
     var wasOpen = sheetOpen;
     sheetOpen = null;
+    reviewFromEnd = false;
     stopSpeak();
     document.getElementById('historySheet').style.display = 'none';
     document.getElementById('reviewSheet').style.display = 'none';
@@ -1542,6 +1546,14 @@ if (typeof document !== 'undefined'){
     if (document.getElementById('endOverlay').style.display === 'flex') navSyncPop();
     if (puzzleMode) exitPuzzle(); else openSidePicker();
   });
+  document.getElementById('endReviewBtn').addEventListener('click', function(){
+    if (!savedRec) return;
+    if (document.getElementById('endOverlay').style.display === 'flex') navSyncPop();
+    endDismissed = true;
+    document.getElementById('endOverlay').style.display = 'none';
+    reviewFromEnd = true;
+    openReview(savedRec);
+  });
   document.getElementById('undoBtn').addEventListener('click', function(){
     if (puzzleMode){ if (currentPuzzle) startPuzzleDeal(currentPuzzle); return; }
     if (thinking || gameLog.length <= 1) return;
@@ -1655,12 +1667,15 @@ if (typeof document !== 'undefined'){
   function dlgList(){
     if (document.getElementById('puzzleWin').style.display === 'flex')
       return [document.getElementById('puzzleNext'), document.getElementById('puzzleAgain'), document.getElementById('puzzleWinExit')];
-    if (document.getElementById('endOverlay').style.display === 'flex')
-      return [document.getElementById('againBtn')];
+    if (document.getElementById('endOverlay').style.display === 'flex'){
+      var endBtns = [document.getElementById('againBtn')];
+      if (savedRec) endBtns.push(document.getElementById('endReviewBtn'));
+      return endBtns;
+    }
     return null;
   }
   function paintDlg(){
-    var ids = ['puzzleNext', 'puzzleAgain', 'puzzleWinExit', 'againBtn'];
+    var ids = ['puzzleNext', 'puzzleAgain', 'puzzleWinExit', 'againBtn', 'endReviewBtn'];
     for (var i = 0; i < ids.length; i++){
       var el = document.getElementById(ids[i]);
       if (el) el.classList.remove('dlgOn');
@@ -1869,6 +1884,7 @@ if (typeof document !== 'undefined'){
      menu. ---- */
   var navDepth = 0, navSuppress = 0, navInPop = false;
   var endDismissed = false, endWasShown = false;
+  var reviewFromEnd = false;
   var sideFromDiff = false, bootNavPending = false;
   function navPush(){
     if (navInPop || navDepth >= 4) return;
@@ -1897,8 +1913,13 @@ if (typeof document !== 'undefined'){
       }
       else if (sheetOpen === 'review'){
         document.getElementById('reviewSheet').style.display = 'none';
-        document.getElementById('historySheet').style.display = 'flex';
-        sheetOpen = 'history';
+        if (reviewFromEnd){
+          reviewFromEnd = false;
+          sheetOpen = null;
+        } else {
+          document.getElementById('historySheet').style.display = 'flex';
+          sheetOpen = 'history';
+        }
       }
       else if (sheetOpen){ closeSheets(); }
       else if (document.getElementById('sideOverlay').style.display === 'flex'){
