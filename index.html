@@ -312,7 +312,7 @@
     <div id="menuGrid"></div>
     <button class="backBtn" id="voiceBar" style="width:min(94%,118vmin);margin-top:1.2vmin">🎤 Voice moves · <span id="voiceState">Off</span></button>
     <div class="menuHint">Swipes move · Pinch selects · Shake closes</div>
-    <div class="menuHint" style="opacity:.55">The Chess Display · build Nov 5 v29</div>
+    <div class="menuHint" style="opacity:.55">The Chess Display · build Nov 5 v30</div>
   </div>
   <div class="overlay" id="diffOverlay">
     <div id="diffGrid"></div>
@@ -2310,7 +2310,7 @@ if (typeof document !== 'undefined'){
     }
     return { board: b, turn: 'w', castling: '-', ep: -1 };
   }
-  function stateToFEN(st){
+  function puzzleStateToFEN(st){
     var rows = [];
     for (var r = 0; r < 8; r++){
       var row = '', empty = 0;
@@ -2380,13 +2380,13 @@ if (typeof document !== 'undefined'){
     for (var a = 0; a < 40; a++){
       var raw = buildCandidate();
       if (!raw) continue;
-      var st = parseFEN(stateToFEN(raw)); /* normalize into a full engine state */
+      var st = parseFEN(puzzleStateToFEN(raw)); /* normalize into a full engine state */
       /* alternate deals lead with mate-in-3 attempts so deeper puzzles appear regularly */
       var maxD = (pzDealNo % 2 === 0) ? (a < 12 ? 3 : 2) : (a < 28 ? 2 : 3);
       var d = validateCandidate(st, maxD);
       if (!d) continue;
       var dealt = transformState(st);
-      var fen = stateToFEN(dealt);
+      var fen = puzzleStateToFEN(dealt);
       if (seen.indexOf(fen) >= 0) continue;
       return { fen: fen, mateIn: d };
     }
