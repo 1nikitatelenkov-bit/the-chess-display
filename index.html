@@ -152,6 +152,21 @@
   @keyframes popIn{from{transform:scale(.4);opacity:0}to{transform:scale(1);opacity:1}}
   @keyframes flick{0%{transform:scale(.5);opacity:0}25%{transform:scale(1.15) rotate(3deg)}50%{transform:scale(.95) rotate(-3deg) translateY(.2vmin)}75%{transform:scale(1.1) rotate(2deg) translateY(-.4vmin)}100%{transform:scale(1) rotate(0)}}
   @keyframes confettiFall{0%{transform:translateY(0) rotate(0deg);opacity:1}85%{opacity:1}100%{transform:translateY(62vmin) rotate(560deg);opacity:0}}
+  #welcomeFx{position:absolute;inset:0;overflow:hidden;pointer-events:none}
+  .fireGlow{position:absolute;inset:0;background:radial-gradient(ellipse at 50% 108%,rgba(255,110,0,.5),rgba(255,60,0,.16) 45%,transparent 72%);animation:fireFlick 0.9s ease-in-out infinite alternate}
+  .flameBlob{position:absolute;bottom:-7vmin;border-radius:50% 50% 50% 50%/62% 62% 38% 38%;filter:blur(1.1vmin);background:radial-gradient(circle at 50% 78%,#ffe9a3 0%,#ffb300 34%,#ff6a00 62%,rgba(255,40,0,.0) 78%);animation:flameDance 0.7s ease-in-out infinite alternate}
+  .ember{position:absolute;bottom:4vmin;border-radius:50%;background:#ffcf5e;opacity:0;animation:emberUp 2.6s ease-in infinite}
+  @keyframes fireFlick{from{opacity:.75}to{opacity:1}}
+  @keyframes flameDance{from{transform:scaleY(.86) translateX(-.5vmin)}to{transform:scaleY(1.12) translateX(.5vmin)}}
+  @keyframes emberUp{0%{transform:translateY(0);opacity:0}12%{opacity:.95}100%{transform:translateY(-58vmin) translateX(2.5vmin);opacity:0}}
+  .smokePuff{position:absolute;border-radius:50%;background:radial-gradient(circle,rgba(205,205,205,.5) 0%,rgba(205,205,205,0) 68%);filter:blur(1.6vmin);opacity:0;animation:smokeDrift 3.4s ease-out 1 both}
+  @keyframes smokeDrift{0%{transform:translateY(9vmin) scale(.72);opacity:0}22%{opacity:.85}100%{transform:translateY(-13vmin) scale(1.28);opacity:0}}
+  .fxRays{position:absolute;left:-25%;top:-25%;width:150%;height:150%;border-radius:50%;background:repeating-conic-gradient(from 0deg,rgba(255,179,0,.17) 0deg 9deg,transparent 9deg 18deg);animation:raySpin 8s linear infinite}
+  @keyframes raySpin{to{transform:rotate(360deg)}}
+  .fxSpark{position:absolute;opacity:0;animation:sparkPop 1.5s ease-out 1 both}
+  @keyframes sparkPop{0%{transform:scale(.3);opacity:0}30%{opacity:1}100%{transform:scale(1.25);opacity:0}}
+  .fxRing{position:absolute;border:.5vmin solid rgba(255,205,90,.85);border-radius:50%;opacity:0;animation:ringOut 1.15s ease-out 1 both}
+  @keyframes ringOut{0%{transform:scale(.25);opacity:.95}100%{transform:scale(1.5);opacity:0}}
   #board.shaking{animation:boardShake .4s}
   @keyframes boardShake{0%,100%{transform:translateX(0)}20%{transform:translateX(-1.2vmin)}40%{transform:translateX(1.2vmin)}60%{transform:translateX(-.8vmin)}80%{transform:translateX(.8vmin)}}
 
@@ -274,6 +289,7 @@
     </div>
     <div class="overlay" id="welcomeOverlay">
       <div id="welcomeConfetti"></div>
+      <div id="welcomeFx"></div>
       <div id="welcomeFlames"></div>
       <h2 id="welcomeTitle">WOOHOO!</h2>
       <p id="welcomeText">YOU'RE BACK!</p>
@@ -322,7 +338,7 @@
     <div id="menuGrid"></div>
     <button class="backBtn" id="voiceBar" style="width:min(94%,118vmin);margin-top:1.2vmin">🎤 Voice moves · <span id="voiceState">Off</span></button>
     <div class="menuHint">Swipes move · Pinch selects · Shake closes</div>
-    <div class="menuHint" style="opacity:.55">The Chess Display · build Nov 6 v36</div>
+    <div class="menuHint" style="opacity:.55">The Chess Display · build Nov 7 v37</div>
   </div>
   <div class="overlay" id="diffOverlay">
     <div id="diffGrid"></div>
@@ -2687,32 +2703,130 @@ if (typeof document !== 'undefined'){
     document.getElementById('welcomeTitle').textContent = n > 1 ? 'WOOHOO!' : 'WELCOME!';
     document.getElementById('welcomeText').textContent = n > 1 ? "YOU'RE BACK!" : 'A NEW STREAK BEGINS';
     document.getElementById('welcomeDay').textContent = 'THIS IS YOUR DAY ' + n;
+    entranceFx(pickEntrance());
+    document.getElementById('welcomeOverlay').style.display = 'flex';
+    welcomeOpen = true;
+  }
+
+  /* ---- Entrance variants: one per welcome, shuffled, never the same
+     twice in a row — confetti, whole-screen fire, smoke, horns, claps. */
+  var ENTRANCES = ['confetti', 'fire', 'smoke', 'horns', 'claps'];
+  var lastEntrance = '', entranceNow = '';
+  var noiseBuf = null;
+  function pickEntrance(){
+    var pool = ENTRANCES.filter(function(x){ return x !== lastEntrance; });
+    var pick = pool[Math.floor(Math.random() * pool.length)];
+    lastEntrance = pick; entranceNow = pick;
+    return pick;
+  }
+  function noiseBurst(delay, dur, freq, gain){
+    try{
+      if (!AC) AC = new (window.AudioContext || window.webkitAudioContext)();
+      if (!noiseBuf){
+        noiseBuf = AC.createBuffer(1, AC.sampleRate * 0.5, AC.sampleRate);
+        var ch = noiseBuf.getChannelData(0);
+        for (var ni = 0; ni < ch.length; ni++) ch[ni] = Math.random() * 2 - 1;
+      }
+      var src = AC.createBufferSource(); src.buffer = noiseBuf;
+      var f = AC.createBiquadFilter(); f.type = 'bandpass'; f.frequency.value = freq; f.Q.value = 0.9;
+      var g = AC.createGain();
+      var t = AC.currentTime + delay;
+      g.gain.setValueAtTime(gain, t);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+      src.connect(f); f.connect(g); g.connect(AC.destination);
+      src.start(t); src.stop(t + dur + 0.05);
+    }catch(e){}
+  }
+  function entranceFx(kind){
     var fl = document.getElementById('welcomeFlames');
-    fl.innerHTML = '';
+    var cf = document.getElementById('welcomeConfetti');
+    var fx = document.getElementById('welcomeFx');
+    fl.innerHTML = ''; cf.innerHTML = ''; fx.innerHTML = '';
+    var icons = { confetti: '\uD83C\uDF89', fire: '\uD83D\uDD25', smoke: '\uD83D\uDCA8', horns: '\uD83C\uDFBA', claps: '\uD83D\uDC4F' };
     for (var fi = 0; fi < 5; fi++){
       var sp = document.createElement('span');
-      sp.textContent = '\uD83D\uDD25';
+      sp.textContent = icons[kind] || icons.confetti;
       sp.style.animationDelay = (fi * 0.13) + 's';
       sp.style.fontSize = (fi === 2 ? 7.6 : 5.4) + 'vmin';
       fl.appendChild(sp);
     }
-    var cf = document.getElementById('welcomeConfetti');
-    cf.innerHTML = '';
-    var colors = ['#ffb300', '#739552', '#e05555', '#5d84a6', '#f6f2e8'];
-    for (var ci2 = 0; ci2 < 16; ci2++){
-      var pc = document.createElement('i');
-      pc.className = 'confetti';
-      pc.style.left = (3 + (ci2 * 37) % 92) + '%';
-      pc.style.background = colors[ci2 % colors.length];
-      pc.style.animationDelay = ((ci2 % 8) * 0.18) + 's';
-      cf.appendChild(pc);
+    function div(cls){ var d = document.createElement('div'); d.className = cls; fx.appendChild(d); return d; }
+    if (kind === 'confetti'){
+      var colors = ['#ffb300', '#739552', '#e05555', '#5d84a6', '#f6f2e8'];
+      for (var ci2 = 0; ci2 < 16; ci2++){
+        var pc = document.createElement('i');
+        pc.className = 'confetti';
+        pc.style.left = (3 + (ci2 * 37) % 92) + '%';
+        pc.style.background = colors[ci2 % colors.length];
+        pc.style.animationDelay = ((ci2 % 8) * 0.18) + 's';
+        cf.appendChild(pc);
+      }
+      setTimeout(function(){ beep(523, 0.09, 'sine', 0.04); }, 60);
+      setTimeout(function(){ beep(659, 0.09, 'sine', 0.04); }, 170);
+      setTimeout(function(){ beep(784, 0.12, 'sine', 0.045); }, 280);
+      setTimeout(function(){ beep(1046, 0.16, 'sine', 0.045); }, 390);
+    } else if (kind === 'fire'){
+      div('fireGlow');
+      for (var fb = 0; fb < 7; fb++){
+        var bl = div('flameBlob');
+        bl.style.left = (2 + fb * 13.5) + '%';
+        bl.style.width = (15 + (fb % 3) * 4) + 'vmin';
+        bl.style.height = (24 + (fb % 4) * 5) + 'vmin';
+        bl.style.animationDelay = (fb * 0.11) + 's';
+      }
+      for (var em = 0; em < 12; em++){
+        var eb = div('ember');
+        eb.style.left = (5 + (em * 29) % 90) + '%';
+        eb.style.width = eb.style.height = (0.7 + (em % 3) * 0.35) + 'vmin';
+        eb.style.animationDelay = (em * 0.23) + 's';
+      }
+      for (var ck = 0; ck < 9; ck++)
+        noiseBurst(0.15 + ck * 0.21 + (ck % 3) * 0.04, 0.05, 420 + (ck % 4) * 160, 0.016);
+    } else if (kind === 'smoke'){
+      for (var sm = 0; sm < 12; sm++){
+        var pf = div('smokePuff');
+        var sz = 20 + (sm % 4) * 6;
+        pf.style.width = pf.style.height = sz + 'vmin';
+        pf.style.left = ((sm * 31) % 78) + '%';
+        pf.style.top = (8 + (sm % 3) * 24) + '%';
+        pf.style.animationDelay = (sm * 0.16) + 's';
+      }
+      noiseBurst(0, 1.6, 480, 0.028);
+      noiseBurst(0.25, 1.6, 640, 0.02);
+    } else if (kind === 'horns'){
+      div('fxRays');
+      for (var sk = 0; sk < 6; sk++){
+        var sx = document.createElement('span');
+        sx.className = 'fxSpark';
+        sx.textContent = '\u2728';
+        sx.style.left = (12 + (sk * 53) % 74) + '%';
+        sx.style.top = (10 + (sk % 3) * 22) + '%';
+        sx.style.fontSize = (2.6 + (sk % 3)) + 'vmin';
+        sx.style.animationDelay = (0.15 + sk * 0.17) + 's';
+        fx.appendChild(sx);
+      }
+      var riff = [[392, 0.11], [523, 0.11], [659, 0.11], [784, 0.3], [659, 0.1], [784, 0.1], [1046, 0.42]];
+      var rt = 40;
+      riff.forEach(function(nt){
+        var f0 = nt[0], d0 = nt[1], at = rt;
+        setTimeout(function(){ beep(f0, d0, 'sawtooth', 0.028); beep(f0 / 2, d0, 'triangle', 0.02); }, at);
+        rt += d0 * 1000 + 25;
+      });
+    } else if (kind === 'claps'){
+      for (var rg = 0; rg < 5; rg++){
+        var ring = div('fxRing');
+        ring.style.width = ring.style.height = (26 + rg * 4) + 'vmin';
+        ring.style.left = '50%'; ring.style.top = '44%';
+        ring.style.marginLeft = (-(26 + rg * 4) / 2) + 'vmin';
+        ring.style.marginTop = (-(26 + rg * 4) / 2) + 'vmin';
+        ring.style.animationDelay = (rg * 0.18) + 's';
+      }
+      var ct = 0;
+      for (var cp = 0; cp < 16; cp++){
+        ct += 0.055 + (cp % 4 === 3 ? 0.1 : 0);
+        noiseBurst(ct, 0.055, 1150 + (cp % 5) * 130, 0.05);
+      }
     }
-    document.getElementById('welcomeOverlay').style.display = 'flex';
-    welcomeOpen = true;
-    setTimeout(function(){ beep(523, 0.09, 'sine', 0.04); }, 60);
-    setTimeout(function(){ beep(659, 0.09, 'sine', 0.04); }, 170);
-    setTimeout(function(){ beep(784, 0.12, 'sine', 0.045); }, 280);
-    setTimeout(function(){ beep(1046, 0.16, 'sine', 0.045); }, 390);
   }
   function dismissWelcome(){
     if (!welcomeOpen) return;
