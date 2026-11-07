@@ -51,6 +51,8 @@
   .animPc{position:absolute;left:0;top:0;width:12.5%;height:12.5%;will-change:transform;transition:transform .19s cubic-bezier(.25,.7,.3,1),filter .19s ease-out}
   .animPc.fly{filter:blur(.45vmin);opacity:.95}
   .animPc.ghost{filter:blur(.8vmin)}
+  .animShard{transition:transform .32s cubic-bezier(.17,.67,.35,1),opacity .32s ease-out}
+  .animRing{position:absolute;left:0;top:0;width:12.5%;height:12.5%;border:.45vmin solid rgba(255,205,90,.9);border-radius:50%;pointer-events:none;transition:transform .22s ease-out,opacity .22s ease-out}
   .pc svg{width:100%;height:100%;display:block;filter:drop-shadow(0 .2vmin .25vmin rgba(0,0,0,.35))}
   .coord{position:absolute;font-size:1.45vmin;font-weight:700;z-index:2;pointer-events:none}
   .coord.rank{top:.3vmin;left:.4vmin}
@@ -321,7 +323,7 @@
     <div id="menuGrid"></div>
     <button class="backBtn" id="voiceBar" style="width:min(94%,118vmin);margin-top:1.2vmin">🎤 Voice moves · <span id="voiceState">Off</span></button>
     <div class="menuHint">Swipes move · Pinch selects · Shake closes</div>
-    <div class="menuHint" style="opacity:.55">The Chess Display · build Nov 6 v33</div>
+    <div class="menuHint" style="opacity:.55">The Chess Display · build Nov 6 v34</div>
   </div>
   <div class="overlay" id="diffOverlay">
     <div id="diffGrid"></div>
@@ -1127,7 +1129,11 @@ if (typeof document !== 'undefined'){
   function doMove(m, legalForSAN){
     var st = state();
     var san = toSAN(st, m, legalForSAN || legalMoves(st));
-    var anim = { from: m.from, to: m.to, piece: m.piece, rook: null };
+    var anim = { from: m.from, to: m.to, piece: m.piece, rook: null, captured: null };
+    if (m.captured){
+      var capIdx = !st.board[m.to] ? ((m.to & 7) | (m.from & 56)) : m.to; /* en passant: the pawn dies on its own square */
+      anim.captured = { idx: capIdx, piece: m.captured };
+    }
     if ((m.piece === 'K' || m.piece === 'k') && Math.abs((m.to & 7) - (m.from & 7)) === 2){
       var rb = m.from & 56;
       anim.rook = (m.to & 7) === 6 ? { from: rb + 7, to: rb + 5, piece: m.piece === 'K' ? 'R' : 'r' }
@@ -1570,9 +1576,54 @@ if (typeof document !== 'undefined'){
     try{
       var layer = document.getElementById('animLayer');
       if (!layer) return;
+      if (a.captured) victimBurst(a.captured, layer);
       flightLeg(a.from, a.to, a.piece, layer);
       if (a.rook) flightLeg(a.rook.from, a.rook.to, a.rook.piece, layer);
     }catch(e){}
+  }
+  /* The captured piece holds its square while the attacker glides in,
+     then bursts: an impact ring plus its four clipped quadrants flying
+     apart with rotation and fade. Pure view layer, like the flight. */
+  function victimBurst(cap, layer){
+    var dt = displayOf(cap.idx);
+    var tx = (dt & 7) * 100, ty = (dt >> 3) * 100;
+    var art = pieceSVG(cap.piece.toUpperCase(), isWhitePiece(cap.piece));
+    var v = document.createElement('div');
+    v.className = 'animPc';
+    v.innerHTML = '<span class="pc">' + art + '</span>';
+    v.style.transform = 'translate(' + tx + '%,' + ty + '%)';
+    layer.appendChild(v);
+    setTimeout(function(){
+      var ring = document.createElement('div');
+      ring.className = 'animRing';
+      ring.style.transform = 'translate(' + tx + '%,' + ty + '%) scale(.4)';
+      layer.appendChild(ring);
+      void ring.offsetWidth;
+      ring.style.transform = 'translate(' + tx + '%,' + ty + '%) scale(1.15)';
+      ring.style.opacity = '0';
+      var dirs = [[-58, -52, -38], [58, -58, 42], [-52, 58, 30], [56, 52, -44]];
+      var clips = ['inset(0 50% 50% 0)', 'inset(0 0 50% 50%)', 'inset(50% 50% 0 0)', 'inset(50% 0 0 50%)'];
+      var shards = [];
+      for (var q = 0; q < 4; q++){
+        var sh = document.createElement('div');
+        sh.className = 'animPc animShard';
+        sh.innerHTML = '<span class="pc" style="clip-path:' + clips[q] + '">' + art + '</span>';
+        sh.style.transform = 'translate(' + tx + '%,' + ty + '%) rotate(0deg)';
+        layer.appendChild(sh);
+        shards.push(sh);
+      }
+      shards.forEach(function(sh, q){
+        void sh.offsetWidth;
+        sh.style.transform = 'translate(' + (tx + dirs[q][0]) + '%,' + (ty + dirs[q][1]) + '%) rotate(' + dirs[q][2] + 'deg)';
+        sh.style.opacity = '0';
+      });
+      if (v.parentNode) v.parentNode.removeChild(v);
+      try{ beep(120, 0.08, 'square', 0.04); }catch(e){}
+      setTimeout(function(){
+        if (ring.parentNode) ring.parentNode.removeChild(ring);
+        shards.forEach(function(sh){ if (sh.parentNode) sh.parentNode.removeChild(sh); });
+      }, 340);
+    }, 150);
   }
   function flightLeg(from, to, piece, layer){
     var df = displayOf(from), dt = displayOf(to);
