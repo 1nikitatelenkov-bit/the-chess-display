@@ -338,7 +338,7 @@
     <div id="menuGrid"></div>
     <button class="backBtn" id="voiceBar" style="width:min(94%,118vmin);margin-top:1.2vmin">🎤 Voice moves · <span id="voiceState">Off</span></button>
     <div class="menuHint">Swipes move · Pinch selects · Shake closes</div>
-    <div class="menuHint" style="opacity:.55">The Chess Display · build Nov 7 v37</div>
+    <div class="menuHint" style="opacity:.55">The Chess Display · build Nov 7 v38</div>
   </div>
   <div class="overlay" id="diffOverlay">
     <div id="diffGrid"></div>
@@ -1461,6 +1461,71 @@ if (typeof document !== 'undefined'){
     else if (san.indexOf('+') >= 0) txt += ' \u2014 check';
     return txt;
   }
+  /* ---- Review tips: context first, then a rotating pool per verdict.
+     One canned line per class (the old way) repeated until it meant
+     nothing. Context tips speak to THIS move; the pool pick is seeded
+     by the game and the ply, so a review never shows the same tip
+     twice in a row and reopening a game shows the same tips. ---- */
+  var TIP_POOLS = {
+    best: [
+      'Tip: moves like this come from asking "what does my opponent want?" before you move.',
+      'Tip: you found the move the position was asking for. Reading what the board needs beats memorized lines.',
+      'Tip: best moves usually improve your worst-placed piece. You did exactly that here.',
+      'Tip: notice how this move does two jobs at once. Moves that multitask are the ones engines love.',
+      'Tip: this is what happens when you check forcing moves first \u2014 checks, captures, threats \u2014 before quiet ones.'
+    ],
+    good: [
+      'Tip: steady moves like this are how games are won \u2014 no drama, no gifts.',
+      'Tip: solid and sensible. Stack enough of these and the position starts to play itself.',
+      'Tip: nothing flashy, nothing loose \u2014 this is the texture of a well-played game.',
+      'Tip: you kept every option open and gave nothing away. Patience is a weapon.',
+      'Tip: good moves like this come from a calm scan: what changed, what is attacked, what is weak.'
+    ],
+    inaccuracy: [
+      'Tip: before you move, glance at every capture and check \u2014 for both sides. The best move is often hiding there.',
+      'Tip: small slips usually mean a candidate move was never considered. Name three options before choosing one.',
+      'Tip: when two moves look equal, pick the one that leaves your pieces more active \u2014 activity is the tiebreaker.',
+      'Tip: a useful habit: after picking a move, ask "what is my opponent\u2019s best reply?" Ten seconds, most slips caught.',
+      'Tip: looseness creeps in when you play the move you want to be good. Play the one the position needs.'
+    ],
+    mistake: [
+      'Tip: once you pick a move, ask "what can my opponent take now?" If the answer hurts, look again.',
+      'Tip: mistakes often answer a threat that wasn\u2019t there \u2014 or miss the one that was. Recheck what their last move actually changed.',
+      'Tip: when you are not sure, improve your worst piece instead of starting something. Quiet improvement rarely loses ground.',
+      'Tip: a two-question reset helps: am I leaving anything hanging? Is there a check or capture I am missing?',
+      'Tip: this is the classic one-move-too-fast. The idea was fine \u2014 one more look at their replies was the whole cost.'
+    ],
+    blunder: [
+      'Tip: most blunders are speed, not knowledge. A five-second scan for hanging pieces prevents almost all of them.',
+      'Tip: the blunder check is boring and it works: after every move, look once at what can be captured \u2014 both ways.',
+      'Tip: if a move feels automatic, that is exactly when to pause. Automatic is where blunders live.',
+      'Tip: tunnel vision causes these \u2014 one plan, eyes off the rest of the board. Zoom out before you commit.',
+      'Tip: even grandmasters hang pieces; they just do it less, because the final safety scan is a habit, not a hope.'
+    ]
+  };
+  function adviceFor(res, mv, san, isHanging, plyIdx, rec, moveNo){
+    var cls = res.cls;
+    var bad = (cls === 'inaccuracy' || cls === 'mistake' || cls === 'blunder');
+    if (bad && res.bestSan && res.bestSan.indexOf('#') >= 0)
+      return 'Tip: there was a checkmate hiding here. When the enemy king has no room, run through every check you have \u2014 one of them may end it.';
+    if (isHanging && (cls === 'mistake' || cls === 'blunder'))
+      return 'Tip: before you let go of a piece, check its new home: is it defended, and can anything take it for free? That one glance saves more points than any opening.';
+    if (mv && mv.captured && bad)
+      return 'Tip: winning a piece feels automatic, but always ask what the capture opens up \u2014 a line against your king, or a defender that just left its post.';
+    if (bad && san && san.indexOf('+') >= 0 && cls !== 'blunder')
+      return 'Tip: a check is only good if it improves your position. If they can block or step away and end up better, the check just spent a move.';
+    if (bad && res.bestSan && res.bestSan.indexOf('x') >= 0 && (!san || san.indexOf('x') < 0))
+      return 'Tip: the engine\u2019s move was a capture. Captures change the position most, so scan them first \u2014 yours and theirs.';
+    if (mv && mv.piece && mv.piece.toUpperCase() === 'Q' && moveNo <= 8 && bad)
+      return 'Tip: the queen is a poor scout \u2014 out this early she gets chased and loses time. Knights and bishops first; her majesty enters when the board is ready.';
+    if (mv && mv.castle && (cls === 'best' || cls === 'good'))
+      return 'Tip: an early castle is almost never wrong. King safe, rook connected \u2014 the two cheapest points of insurance in chess.';
+    if (mv && mv.promo && (cls === 'best' || cls === 'good'))
+      return 'Tip: a promotion is the loudest move in chess \u2014 when a pawn is close, calculate its race before anything quiet.';
+    var pool = TIP_POOLS[cls] || TIP_POOLS.good;
+    var seed = ((rec && rec.date) || 0) + plyIdx * 7;
+    return pool[Math.abs(seed) % pool.length];
+  }
   function explainStep(){
     var rec = rev.rec;
     if (rev.ply === 0) return {
@@ -1496,20 +1561,16 @@ if (typeof document !== 'undefined'){
     }
     if (res.cls === 'best'){
       text += 'This was the engine\u2019s top choice \u2014 the strongest move in the position.';
-      advice = 'Tip: moves like this come from asking "what does my opponent want?" before you move.';
     } else if (res.cls === 'good'){
       text += 'A solid move, almost as strong as the best (' + res.bestSan + '). It gives up next to nothing.';
-      advice = 'Tip: steady moves like this are how games are won \u2014 no drama, no gifts.';
     } else if (res.cls === 'inaccuracy'){
       text += 'Slightly loose: it gives up about ' + pawns + ' of a pawn compared with the best move, ' + res.bestSan + '.' + hanging;
-      advice = 'Tip: before you move, glance at every capture and check \u2014 for both sides. The best move is often hiding there.';
     } else if (res.cls === 'mistake'){
       text += 'This one costs about ' + pawns + ' pawns of ground.' + hanging + ' The engine\u2019s move was ' + res.bestSan + '.';
-      advice = 'Tip: once you pick a move, ask "what can my opponent take now?" If the answer hurts, look again.';
     } else {
       text += 'A blunder \u2014 about ' + pawns + ' pawns lost in one move.' + hanging + ' The move to find was ' + res.bestSan + '.';
-      advice = 'Tip: most blunders are speed, not knowledge. A five-second scan for hanging pieces prevents almost all of them.';
     }
+    advice = adviceFor(res, mv, san, !!hanging, i, rec, moveNo);
     var clsWord = {best: 'Best move', good: 'Good move', inaccuracy: 'Inaccuracy', mistake: 'Mistake', blunder: 'Blunder'}[res.cls];
     return { title: head + ' \u2014 ' + clsWord, cls: res.cls, text: text, advice: advice,
              speak: 'Move ' + moveNo + '. ' + clsWord + '. ' + text + ' ' + advice };
