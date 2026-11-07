@@ -47,6 +47,10 @@
                     background:radial-gradient(circle,rgba(255,55,35,.9) 15%,rgba(255,55,35,0) 72%)}
   .sq.cursor{box-shadow:inset 0 0 0 .55vmin #ffb300;z-index:3}
   .pc{position:absolute;inset:6%;z-index:2;pointer-events:none;filter:drop-shadow(0 .16vmin .1vmin rgba(0,0,0,.4))}
+  #animLayer{position:absolute;inset:1.2vmin;pointer-events:none;z-index:6}
+  .animPc{position:absolute;left:0;top:0;width:12.5%;height:12.5%;will-change:transform;transition:transform .19s cubic-bezier(.25,.7,.3,1),filter .19s ease-out}
+  .animPc.fly{filter:blur(.45vmin);opacity:.95}
+  .animPc.ghost{filter:blur(.8vmin)}
   .pc svg{width:100%;height:100%;display:block;filter:drop-shadow(0 .2vmin .25vmin rgba(0,0,0,.35))}
   .coord{position:absolute;font-size:1.45vmin;font-weight:700;z-index:2;pointer-events:none}
   .coord.rank{top:.3vmin;left:.4vmin}
@@ -231,6 +235,7 @@
 
   <div id="boardBox">
     <div id="board" class="grid8"></div>
+    <div id="animLayer"></div>
     <div class="overlay" id="promoOverlay">
       <h2>Promote to</h2>
       <div id="promoRow"></div>
@@ -315,7 +320,7 @@
     <div id="menuGrid"></div>
     <button class="backBtn" id="voiceBar" style="width:min(94%,118vmin);margin-top:1.2vmin">🎤 Voice moves · <span id="voiceState">Off</span></button>
     <div class="menuHint">Swipes move · Pinch selects · Shake closes</div>
-    <div class="menuHint" style="opacity:.55">The Chess Display · build Nov 5 v31</div>
+    <div class="menuHint" style="opacity:.55">The Chess Display · build Nov 6 v32</div>
   </div>
   <div class="overlay" id="diffOverlay">
     <div id="diffGrid"></div>
@@ -873,6 +878,7 @@ if (typeof document !== 'undefined'){
     return c;
   }
   var orientation = 'w';
+  var viewFlipped = false; /* view-only: the player's side is at the bottom unless he flips the board himself */
   var difficulty = 'hard';
   var gameLog = [{state: initialState(), from: -1, to: -1, san: null}];
   var selected = null;
@@ -986,8 +992,9 @@ if (typeof document !== 'undefined'){
   }
 
   function render(){
-    /* the player's own pieces always sit on the bottom row */
-    orientation = playerColor;
+    /* the player's own pieces sit on the bottom rows — unless he flipped
+       the view himself with the Flip board tile */
+    orientation = viewFlipped ? opp(playerColor) : playerColor;
     var st = state();
     var legal = gameOver ? [] : legalMoves(st);
     currentLegal = legal;
@@ -1061,6 +1068,7 @@ if (typeof document !== 'undefined'){
     document.getElementById('railResignLab').textContent = puzzleMode ? 'Exit' : 'Resign';
     railResign.disabled = puzzleMode ? false : (thinking || gameOver || locked);
     renderRail();
+    if (pendingAnim){ var pa = pendingAnim; pendingAnim = null; flyPiece(pa); }
   }
 
   function buildRecord(result, title){
@@ -1114,9 +1122,17 @@ if (typeof document !== 'undefined'){
     saveProgress();
   }
 
+  var pendingAnim = null, lastFlight = null;
   function doMove(m, legalForSAN){
     var st = state();
     var san = toSAN(st, m, legalForSAN || legalMoves(st));
+    var anim = { from: m.from, to: m.to, piece: m.piece, rook: null };
+    if ((m.piece === 'K' || m.piece === 'k') && Math.abs((m.to & 7) - (m.from & 7)) === 2){
+      var rb = m.from & 56;
+      anim.rook = (m.to & 7) === 6 ? { from: rb + 7, to: rb + 5, piece: m.piece === 'K' ? 'R' : 'r' }
+                                   : { from: rb, to: rb + 3, piece: m.piece === 'K' ? 'R' : 'r' };
+    }
+    pendingAnim = anim;
     gameLog.push({state: makeMove(st, m), from: m.from, to: m.to, san: san});
     selected = null;
     if (m.captured) beep(170, 0.09, 'square', 0.05); else beep(440, 0.05);
@@ -1240,6 +1256,7 @@ if (typeof document !== 'undefined'){
     gameSaved = false; savedRec = null;
     playerColor = (color === 'b') ? 'b' : 'w';
     orientation = playerColor;
+    viewFlipped = false;
     cursor = playerColor === 'w' ? 52 : 12;
     closePromo();
     resignOpen = false;
@@ -1536,6 +1553,66 @@ if (typeof document !== 'undefined'){
     for (var j = 0; j < spans.length; j++){
       spans[j].className = 'mv' + (parseInt(spans[j].getAttribute('data-ply'), 10) === rev.ply ? ' cur' : '');
     }
+  }
+
+  /* ---- Move animation: the moved piece glides from its old square to
+     the new one with a short motion-blur trail. Pure view layer — the
+     position is already final; input and timing never wait on it. ---- */
+  function pcChildOf(sq){
+    if (!sq || !sq.children) return null;
+    for (var i = 0; i < sq.children.length; i++)
+      if ((sq.children[i].className || '').indexOf('pc') >= 0) return sq.children[i];
+    return null;
+  }
+  function flyPiece(a){
+    lastFlight = a;
+    try{
+      var layer = document.getElementById('animLayer');
+      if (!layer) return;
+      flightLeg(a.from, a.to, a.piece, layer);
+      if (a.rook) flightLeg(a.rook.from, a.rook.to, a.rook.piece, layer);
+    }catch(e){}
+  }
+  function flightLeg(from, to, piece, layer){
+    var df = displayOf(from), dt = displayOf(to);
+    var pc = pcChildOf(sqEls[dt]);
+    if (pc) pc.style.visibility = 'hidden';
+    function mk(frac, cls, op){
+      var el = document.createElement('div');
+      el.className = 'animPc' + (cls ? ' ' + cls : '');
+      el.innerHTML = '<span class="pc">' + pieceSVG(piece.toUpperCase(), isWhitePiece(piece)) + '</span>';
+      el.style.transform = 'translate(' + (((df & 7) + ((dt & 7) - (df & 7)) * frac) * 100) + '%,' +
+                                        (((df >> 3) + ((dt >> 3) - (df >> 3)) * frac) * 100) + '%)';
+      if (op) el.style.opacity = op;
+      layer.appendChild(el);
+      return el;
+    }
+    var g1 = mk(0.38, 'ghost', '0.30');
+    var g2 = mk(0.7, 'ghost', '0.16');
+    var main = mk(0, '', '');
+    void main.offsetWidth; /* commit the start position before transitioning */
+    main.classList.add('fly');
+    main.style.transform = 'translate(' + ((dt & 7) * 100) + '%,' + ((dt >> 3) * 100) + '%)';
+    setTimeout(function(){
+      [main, g1, g2].forEach(function(el){ if (el && el.parentNode) el.parentNode.removeChild(el); });
+      var pc2 = pcChildOf(sqEls[displayOf(to)]);
+      if (pc2) pc2.style.visibility = '';
+    }, 215);
+  }
+
+  /* ---- Flip board: view-only. Never touches playerColor, the position,
+     or whose turn it is, and never schedules a computer move. The 600 ms
+     guard is the v15-v17 lesson: one pinch can arrive as two signals,
+     and a toggle that fires twice looks exactly like a broken button. ---- */
+  var lastFlipAt = 0;
+  function flipBoard(){
+    var now = Date.now();
+    if (now - lastFlipAt < 600) return;
+    lastFlipAt = now;
+    viewFlipped = !viewFlipped;
+    render();
+    saveProgress();
+    beep(520, 0.05, 'sine', 0.03);
   }
 
   /* ---- Controls ---- */
@@ -1843,12 +1920,20 @@ if (typeof document !== 'undefined'){
       add('Hint', '', closeThen('hintBtn'));
       add('Exit puzzle', '', closeThen('puzzleExit'));
       add('Board color', '', function(){ openColors(); });
+      add('Flip board', orientation === 'w' ? 'White down' : 'Black down', function(){
+        flipBoard();
+        menuTiles = buildMenuTiles(); renderTiles();
+      });
       add('Close menu', '', function(){ closeMenu(); });
     } else {
       add('New game', '', function(){ openDiffs(); });
       add('Puzzles', '', function(){ closeMenu(); dealRandomPuzzle(); });
       add('History', '', function(){ closeMenu(); openHistory(); });
       add('Board color', '', function(){ openColors(); });
+      add('Flip board', orientation === 'w' ? 'White down' : 'Black down', function(){
+        flipBoard();
+        menuTiles = buildMenuTiles(); renderTiles();
+      });
       add('Head gestures', headOn ? 'On' : 'Off', function(){
         document.getElementById('headBtn').click();
         setTimeout(function(){ if (uiZone === 'menu') renderTiles(); }, 500);
@@ -2425,6 +2510,7 @@ if (typeof document !== 'undefined'){
     puzzleMovesLeft = pz.mateIn;
     playerColor = st.turn;
     orientation = st.turn;
+    viewFlipped = false;
     gameLog = [{state: st, from: -1, to: -1, san: null}];
     selected = null; gameOver = false; locked = false; thinking = false;
     gameSaved = true; savedRec = null;
@@ -2833,6 +2919,7 @@ if (typeof document !== 'undefined'){
         playerColor: playerColor,
         difficulty: difficulty,
         orientation: orientation,
+        flipped: viewFlipped,
         finished: !!(gameOver || locked),
         log: gameLog.map(function(e){
           return { fen: stateToFEN(e.state), from: e.from, to: e.to, san: e.san };
@@ -2856,6 +2943,7 @@ if (typeof document !== 'undefined'){
     playerColor = data.playerColor === 'b' ? 'b' : 'w';
     if (DIFFS[data.difficulty]) difficulty = data.difficulty;
     orientation = data.orientation === 'b' ? 'b' : 'w';
+    viewFlipped = !!data.flipped;
     if (puzzleMode){
       var made = 0;
       for (var i = 1; i < gameLog.length; i++)
