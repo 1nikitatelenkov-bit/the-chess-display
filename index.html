@@ -134,6 +134,10 @@
   #status{flex:1}
   #streakChip{display:flex;align-items:center;font-size:2.5vmin;font-weight:800;color:#ffb300;padding:0 1vmin;white-space:nowrap}
   #puzzleBar{display:flex;gap:.8vmin;align-items:center;background:#322f29;border-radius:1.1vmin;padding:.7vmin .8vmin .7vmin 1.4vmin}
+  #openingBar{display:flex;gap:.8vmin;align-items:center;background:#322f29;border-radius:1.1vmin;padding:.7vmin .8vmin .7vmin 1.4vmin}
+  #openingLabel{flex:1;font-size:2.5vmin;font-weight:700;color:#e8e6e1;white-space:nowrap;overflow:hidden}
+  #openingBar .btn{flex:0 0 auto;padding:1vmin 2.2vmin}
+  #opList{display:flex;flex-direction:column;gap:1vmin;overflow-y:auto}
   #puzzleLabel{flex:1;font-size:2.3vmin;font-weight:700;color:#ffb300}
   #puzzleBar .btn{flex:0 0 auto;padding:1vmin 2.2vmin}
   .puzzling .captured,.puzzling .mat{visibility:hidden}
@@ -195,6 +199,7 @@
   .avatar{display:none}
   #controls{display:none}
   #puzzleBar{display:none !important}
+  #openingBar{display:none !important}
   #statusRow{width:min(100%,calc(100dvh - 29vmin));margin:0 auto}
   #help{width:min(100%,calc(100dvh - 29vmin));margin:0 auto;height:auto;min-height:2.8vmin;padding:.3vmin 0}
   #board{border-radius:.7vmin;overflow:hidden}
@@ -250,6 +255,13 @@
     <button class="btn" id="puzzleExit">Exit</button>
   </div>
 
+  <div id="openingBar" style="display:none">
+    <span id="openingLabel"></span>
+    <button class="btn" id="opMainBtn">Practice</button>
+    <button class="btn" id="opRestartBtn" style="display:none">Restart</button>
+    <button class="btn" id="opExitBtn">Exit</button>
+  </div>
+
   <div id="boardBox">
     <div id="board" class="grid8"></div>
     <div id="animLayer"></div>
@@ -285,6 +297,15 @@
         <button class="big" id="puzzleNext">Next puzzle</button>
         <button class="big alt" id="puzzleAgain">Solve again</button>
         <button class="big alt" id="puzzleWinExit">Exit</button>
+      </div>
+    </div>
+    <div class="overlay" id="openingDone">
+      <h2>Line complete!</h2>
+      <p id="openingDoneText">You played the whole line.</p>
+      <div style="display:flex;gap:1.6vmin">
+        <button class="big" id="opDoneNext">Next opening</button>
+        <button class="big alt" id="opDoneAgain">Practice again</button>
+        <button class="big alt" id="opDoneList">All openings</button>
       </div>
     </div>
     <div class="overlay" id="welcomeOverlay">
@@ -338,7 +359,7 @@
     <div id="menuGrid"></div>
     <button class="backBtn" id="voiceBar" style="width:min(94%,118vmin);margin-top:1.2vmin">🎤 Voice moves · <span id="voiceState">Off</span></button>
     <div class="menuHint">Swipes move · Pinch selects · Shake closes</div>
-    <div class="menuHint" style="opacity:.55">The Chess Display · build Nov 7 v39</div>
+    <div class="menuHint" style="opacity:.55">The Chess Display · build Nov 7 v40</div>
   </div>
   <div class="overlay" id="diffOverlay">
     <div id="diffGrid"></div>
@@ -362,6 +383,14 @@
       <button class="xBtn" id="histClose">×</button>
     </div>
     <div id="histList"></div>
+  </div>
+
+  <div class="sheet" id="openingsSheet">
+    <div class="sheetHead">
+      <h2>Openings</h2>
+      <button class="xBtn" id="opClose">×</button>
+    </div>
+    <div id="opList"></div>
   </div>
 
   <div class="sheet" id="reviewSheet">
@@ -1043,7 +1072,12 @@ if (typeof document !== 'undefined'){
     var topSide = opp(orientation), botSide = orientation;
     renderBar('top', topSide);
     renderBar('bot', botSide);
-    if (puzzleMode && currentPuzzle){
+    if (openingMode && currentOpening){
+      document.getElementById('topName').textContent = '\uD83D\uDCD6 ' + currentOpening.name;
+      document.getElementById('topSub').textContent = openingMode === 'learn' ? 'Learn \u00B7 step ' + opPly + ' of ' + currentOpening.line.length : 'Practice \u00B7 you play ' + (currentOpening.side === 'w' ? 'White' : 'Black');
+      document.getElementById('botName').textContent = botSide === 'w' ? 'White' : 'Black';
+      document.getElementById('botSub').textContent = 'You';
+    } else if (puzzleMode && currentPuzzle){
       document.getElementById('topName').textContent = '\uD83E\uDDE9 Puzzle';
       var pzTop = loadPz();
       document.getElementById('topSub').textContent = 'Mate in ' + currentPuzzle.mateIn + ' \u00B7 \u26A1 ' + pzTop.rating + ' \u00B7 Solved ' + pzTop.count;
@@ -1083,7 +1117,7 @@ if (typeof document !== 'undefined'){
     document.getElementById('railUndo').disabled = thinking || gameLog.length <= 1;
     document.getElementById('railHint').disabled = thinking || gameOver || locked;
     var railResign = document.getElementById('railResign');
-    document.getElementById('railResignLab').textContent = puzzleMode ? 'Exit' : 'Resign';
+    document.getElementById('railResignLab').textContent = (puzzleMode || openingMode) ? 'Exit' : 'Resign';
     railResign.disabled = puzzleMode ? false : (thinking || gameOver || locked);
     renderRail();
     if (pendingAnim){ var pa = pendingAnim; pendingAnim = null; flyPiece(pa); }
@@ -1123,7 +1157,7 @@ if (typeof document !== 'undefined'){
     }
     if (gameOver && !gameSaved && resultKind) saveFinishedGame(resultKind, resultTitle);
     render();
-    if (!gameOver && !locked && st.turn !== playerColor && !thinking){
+    if (!gameOver && !locked && !openingMode && st.turn !== playerColor && !thinking){
       thinking = true;
       render();
       var gen = gameGen;
@@ -1180,6 +1214,11 @@ if (typeof document !== 'undefined'){
     refresh();
   }
 
+  function submitMove(m){
+    if (puzzleMode) tryPuzzleMove(m);
+    else if (openingMode === 'practice') tryOpeningMove(m);
+    else { doMove(m, currentLegal); refresh(); }
+  }
   function activate(idx){
     if (sheetOpen || resignOpen || welcomeOpen || menuOpen || thinking || gameOver || locked || pendingPromo) return;
     capFlash = null;
@@ -1197,8 +1236,7 @@ if (typeof document !== 'undefined'){
         for (var ci2 = 0; ci2 < currentLegal.length; ci2++){
           var cm = currentLegal[ci2];
           if (cm.from === selected && cm.castle === cSide){
-            if (puzzleMode) tryPuzzleMove(cm);
-            else { doMove(cm, currentLegal); refresh(); }
+            submitMove(cm);
             return;
           }
         }
@@ -1210,8 +1248,7 @@ if (typeof document !== 'undefined'){
       }
       if (cands.length > 1){ openPromo(cands); return; }
       if (cands.length === 1){
-        if (puzzleMode) tryPuzzleMove(cands[0]);
-        else { doMove(cands[0], currentLegal); refresh(); }
+        submitMove(cands[0]);
         return;
       }
     }
@@ -1250,10 +1287,7 @@ if (typeof document !== 'undefined'){
           for (var j = 0; j < pendingPromo.length; j++)
             if (pendingPromo[j].promo === pr) mv = pendingPromo[j];
           closePromo();
-          if (mv){
-            if (puzzleMode) tryPuzzleMove(mv);
-            else { doMove(mv, currentLegal); refresh(); }
-          }
+          if (mv) submitMove(mv);
         });
         row.appendChild(b);
       })(promos[i]);
@@ -1312,6 +1346,7 @@ if (typeof document !== 'undefined'){
     reviewFromEnd = false;
     stopSpeak();
     document.getElementById('historySheet').style.display = 'none';
+    document.getElementById('openingsSheet').style.display = 'none';
     document.getElementById('reviewSheet').style.display = 'none';
     document.getElementById('puzzleSheet').style.display = 'none';
     if (wasOpen) navSyncPop();
@@ -1744,6 +1779,8 @@ if (typeof document !== 'undefined'){
     openReview(savedRec);
   });
   document.getElementById('undoBtn').addEventListener('click', function(){
+    if (openingMode === 'learn'){ opStep(-1); return; }
+    if (openingMode === 'practice'){ if (currentOpening) startPractice(currentOpening); return; }
     if (puzzleMode){ if (currentPuzzle) startPuzzleDeal(currentPuzzle); return; }
     if (thinking || gameLog.length <= 1) return;
     gameLog.pop();
@@ -1753,6 +1790,16 @@ if (typeof document !== 'undefined'){
     refresh();
   });
   document.getElementById('hintBtn').addEventListener('click', function(){
+    if (openingMode === 'learn'){ opStep(1); return; }
+    if (openingMode === 'practice'){
+      var expM = (opMoves && currentOpening) ? opMoves[opPly] : null;
+      if (expM){
+        hintFrom = expM.from; hintTo = expM.to;
+        render();
+        setTimeout(function(){ hintFrom = -1; hintTo = -1; render(); }, 1400);
+      }
+      return;
+    }
     if (thinking || gameOver || locked) return;
     var st = state();
     if (st.turn !== playerColor) return;
@@ -1855,6 +1902,8 @@ if (typeof document !== 'undefined'){
   var dlgIdx = 0;
   var dlgWasOpen = false;
   function dlgList(){
+    if (document.getElementById('openingDone').style.display === 'flex')
+      return [document.getElementById('opDoneNext'), document.getElementById('opDoneAgain'), document.getElementById('opDoneList')];
     if (document.getElementById('puzzleWin').style.display === 'flex')
       return [document.getElementById('puzzleNext'), document.getElementById('puzzleAgain'), document.getElementById('puzzleWinExit')];
     if (document.getElementById('endOverlay').style.display === 'flex'){
@@ -1865,7 +1914,7 @@ if (typeof document !== 'undefined'){
     return null;
   }
   function paintDlg(){
-    var ids = ['puzzleNext', 'puzzleAgain', 'puzzleWinExit', 'againBtn', 'endReviewBtn'];
+    var ids = ['puzzleNext', 'puzzleAgain', 'puzzleWinExit', 'againBtn', 'endReviewBtn', 'opDoneNext', 'opDoneAgain', 'opDoneList'];
     for (var i = 0; i < ids.length; i++){
       var el = document.getElementById(ids[i]);
       if (el) el.classList.remove('dlgOn');
@@ -1909,11 +1958,22 @@ if (typeof document !== 'undefined'){
         else if (e.key === 'ArrowDown' || e.key === 'ArrowRight'){ histMove(1); e.preventDefault(); }
         else if (e.key === 'Enter' || e.key === ' '){ histActivate(); e.preventDefault(); }
       }
+      if (sheetOpen === 'openings'){
+        if (e.key === 'ArrowUp' || e.key === 'ArrowLeft'){ opMove(-1); e.preventDefault(); }
+        else if (e.key === 'ArrowDown' || e.key === 'ArrowRight'){ opMove(1); e.preventDefault(); }
+        else if (e.key === 'Enter' || e.key === ' '){ opActivate(); e.preventDefault(); }
+      }
       if (sheetOpen === 'review'){
         if ((e.key === 'ArrowLeft' || e.key === 'ArrowUp') && rev && rev.ply > 0){ rev.ply--; drawReview(); e.preventDefault(); }
         if ((e.key === 'ArrowRight' || e.key === 'ArrowDown') && rev && rev.ply < rev.rec.sans.length){ rev.ply++; drawReview(); e.preventDefault(); }
         if (e.key === 'Enter' || e.key === ' '){ speakReview(); e.preventDefault(); }
       }
+      return;
+    }
+    if (openingMode === 'learn'){
+      if (e.key === 'ArrowLeft' || e.key === 'ArrowUp'){ opStep(-1); e.preventDefault(); }
+      else if (e.key === 'ArrowRight' || e.key === 'ArrowDown'){ opStep(1); e.preventDefault(); }
+      else if (e.key === 'Enter' || e.key === ' '){ if (currentOpening) startPractice(currentOpening); e.preventDefault(); }
       return;
     }
     if (resignOpen){
@@ -2019,6 +2079,7 @@ if (typeof document !== 'undefined'){
     else if (id === 'railUndo') document.getElementById('undoBtn').click();
     else if (id === 'railResign'){
       if (puzzleMode) document.getElementById('puzzleExit').click();
+      else if (openingMode) document.getElementById('opExitBtn').click();
       else document.getElementById('resignBtn').click();
     }
   }
@@ -2034,9 +2095,21 @@ if (typeof document !== 'undefined'){
       add('Exit puzzle', '', closeThen('puzzleExit'));
       add('Board color', '', function(){ openColors(); });
       add('Close menu', '', function(){ closeMenu(); });
+    } else if (openingMode){
+      var closeThenO = function(id){ return function(){ closeMenu(); document.getElementById(id).click(); }; };
+      if (openingMode === 'learn') add('Practice it', '', function(){ closeMenu(); if (currentOpening) startPractice(currentOpening); });
+      if (openingMode === 'practice'){
+        add('Restart line', '', closeThenO('opRestartBtn'));
+        add('Hint', '', closeThenO('hintBtn'));
+      }
+      add('All openings', '', function(){ closeMenu(); exitOpeningToList(); });
+      add('Board color', '', function(){ openColors(); });
+      add('Exit opening', '', closeThenO('opExitBtn'));
+      add('Close menu', '', function(){ closeMenu(); });
     } else {
       add('New game', '', function(){ openDiffs(); });
       add('Puzzles', '', function(){ closeMenu(); dealRandomPuzzle(); });
+      add('Openings', '', function(){ closeMenu(); openOpenings(); });
       add('History', '', function(){ closeMenu(); openHistory(); });
       add('Board color', '', function(){ openColors(); });
       add('Head gestures', headOn ? 'On' : 'Off', function(){
@@ -2094,6 +2167,9 @@ if (typeof document !== 'undefined'){
       if (resignOpen){ document.getElementById('resignNo').click(); }
       else if (pendingPromo){ closePromo(); }
       else if (movesOpen()){ document.getElementById('movesClose').click(); }
+      else if (document.getElementById('openingDone').style.display === 'flex'){
+        document.getElementById('openingDone').style.display = 'none';
+      }
       else if (document.getElementById('puzzleWin').style.display === 'flex'){
         document.getElementById('puzzleWin').style.display = 'none';
       }
@@ -2418,8 +2494,7 @@ if (typeof document !== 'undefined'){
         if (currentLegal[i].from === move.from && currentLegal[i].to === move.to && currentLegal[i].promo === 'Q'){ move = currentLegal[i]; break; }
     }
     flashStatus('You said: ' + raw);
-    if (puzzleMode) tryPuzzleMove(move);
-    else { doMove(move, currentLegal); refresh(); }
+    submitMove(move);
   }
   document.getElementById('voiceBar').addEventListener('click', function(){
     toggleVoice();
@@ -2784,6 +2859,324 @@ if (typeof document !== 'undefined'){
     if (document.getElementById('puzzleWin').style.display === 'flex') navSyncPop();
     document.getElementById('puzzleWin').style.display = 'none';
     if (puzzleMode && currentPuzzle) startPuzzleDeal(currentPuzzle);
+  });
+
+  /* ---- Openings: learn the line, then play it yourself --------------
+     Ten classic lines, each with the idea in plain words and a note on
+     the moves that define it. Learn steps through the line on the main
+     board (arrows or rail: Undo = back, Hint = forward); Practice plays
+     the other side and checks every move you make against the line.
+     Progress (learned / practiced per opening) lives in localStorage;
+     a session itself is never saved as a game. ---- */
+  var OPENINGS = [
+    { id: 'italian', name: 'Italian Game', side: 'w',
+      idea: "Build quietly, then strike with c3 and d4 to open the center exactly when you are ready.",
+      line: ['e4', 'e5', 'Nf3', 'Nc6', 'Bc4', 'Bc5', 'c3', 'Nf6', 'd3'],
+      notes: { 4: "The Italian bishop eyes f7 — the weakest square near the king.", 6: "Prepares d4 and gives the bishop a retreat square.", 8: "The quiet game: keep the center tense rather than opening it too soon." } },
+    { id: 'ruy', name: 'Ruy López', side: 'w',
+      idea: "The Spanish squeeze: keep the bishop, build slowly, and let Black's pawn pushes become weaknesses.",
+      line: ['e4', 'e5', 'Nf3', 'Nc6', 'Bb5', 'a6', 'Ba4', 'Nf6', 'O-O', 'Be7', 'Re1', 'b5', 'Bb3'],
+      notes: { 4: "Pressure on the knight that defends e5.", 6: "Chased, the bishop steps back — and keeps its diagonal.", 10: "Supports the e-pawn and clears the way for a knight tour toward d5." } },
+    { id: 'najdorf', name: 'Sicilian Najdorf', side: 'b',
+      idea: "Black's sharpest answer to 1.e4: unbalance the game at once, then fight for the center.",
+      line: ['e4', 'c5', 'Nf3', 'd6', 'd4', 'cxd4', 'Nxd4', 'Nf6', 'Nc3', 'a6', 'Be3', 'e5', 'Nb3', 'Be6'],
+      notes: { 1: "Fights for d4 without mirroring — unbalanced from move one.", 9: "The Najdorf move: prepares ...b5 and asks the bishop a question.", 11: "Kicks the knight and claims a share of the center." } },
+    { id: 'french', name: 'French Defense', side: 'b',
+      idea: "A stubborn pawn chain: let White overextend, then undermine the center with ...c5 and ...f6.",
+      line: ['e4', 'e6', 'd4', 'd5', 'Nc3', 'Nf6', 'e5', 'Nfd7', 'f4', 'c5'],
+      notes: { 1: "The French chain begins — solid and counterpunching.", 7: "The knight reroutes to support the ...c5 break.", 9: "The break: strike the base of the pawn chain." } },
+    { id: 'caro', name: 'Caro-Kann', side: 'b',
+      idea: "Like the French, but the light-squared bishop gets outside the pawn chain before it closes.",
+      line: ['e4', 'c6', 'd4', 'd5', 'Nc3', 'dxe4', 'Nxe4', 'Bf5', 'Ng3', 'Bg6', 'Nf3', 'Nd7'],
+      notes: { 1: "Supports ...d5 while keeping the bishop's diagonal open.", 7: "The whole point of the Caro: the bishop develops actively first." } },
+    { id: 'qgd', name: "Queen's Gambit Declined", side: 'b',
+      idea: "Decline the gambit pawn, hold d5, and develop behind a rock-solid wall.",
+      line: ['d4', 'd5', 'c4', 'e6', 'Nc3', 'Nf6', 'Bg5', 'Be7', 'e3', 'O-O', 'Nf3', 'h6'],
+      notes: { 3: "Declines the pawn — the center stays Black's.", 11: "Asks the bishop to declare itself before queenside play begins." } },
+    { id: 'slav', name: 'Slav Defense', side: 'b',
+      idea: "Take the gambit pawn when it is offered — ...c6 holds d5 and the bishop still gets out.",
+      line: ['d4', 'd5', 'c4', 'c6', 'Nf3', 'Nf6', 'Nc3', 'dxc4', 'a4', 'Bf5'],
+      notes: { 3: "The Slav: the same center fight as the QGD, with a better bishop.", 7: "Grabs the pawn; White wins it back, but the bishop reaches f5 first." } },
+    { id: 'kid', name: "King's Indian Defense", side: 'b',
+      idea: "Let White build a big center, castle to safety, then blow it open with ...e5.",
+      line: ['d4', 'Nf6', 'c4', 'g6', 'Nc3', 'Bg7', 'e4', 'd6', 'Nf3', 'O-O', 'Be2', 'e5'],
+      notes: { 3: "The fianchetto — this bishop will rake the long diagonal all game.", 11: "The challenge: strike the center White just built." } },
+    { id: 'london', name: 'London System', side: 'w',
+      idea: "One calm setup against almost everything — then the kingside attack begins.",
+      line: ['d4', 'd5', 'Bf4', 'Nf6', 'e3', 'e6', 'Nf3', 'c5', 'c3', 'Nc6', 'Nbd2', 'Bd6', 'Bg3'],
+      notes: { 2: "The London signature: the bishop comes out BEFORE the e-pawn can lock it in.", 12: "Challenged, the bishop steps back and keeps the diagonal. Patience." } },
+    { id: 'english', name: 'English Opening', side: 'w',
+      idea: "A Sicilian with colors reversed and a tempo in hand: control d5 and squeeze.",
+      line: ['c4', 'e5', 'Nc3', 'Nf6', 'Nf3', 'Nc6', 'g3', 'd5', 'cxd5', 'Nxd5', 'Bg2', 'Nb6'],
+      notes: { 0: "Fight for d5 from the flank instead of occupying the center.", 6: "Prepares the fianchetto — the bishop will pressure the long diagonal." } }
+  ];
+  var OP_KEY = 'glasschess.openings.v1';
+  function loadOp(){
+    try{ var s = JSON.parse(localStorage.getItem(OP_KEY) || 'null'); if (s) return s; }catch(e){}
+    return {};
+  }
+  function saveOp(s){ try{ localStorage.setItem(OP_KEY, JSON.stringify(s)); }catch(e){} }
+  function opMark(id, field){
+    var s = loadOp(); var e = s[id] || {};
+    e[field] = true; s[id] = e; saveOp(s);
+  }
+  var openingMode = '', currentOpening = null;
+  var opStates = null, opMoves = null, opPly = 0, opMistakes = 0, opPlyMisses = 0;
+  function opBuild(op){
+    var st = initialState();
+    var states = [st], moves = [];
+    for (var i = 0; i < op.line.length; i++){
+      var mv = findMoveBySAN(st, op.line[i]);
+      if (!mv) return null;
+      moves.push(mv);
+      st = makeMove(st, mv);
+      states.push(st);
+    }
+    return { states: states, moves: moves };
+  }
+
+  /* ---- the openings list (a sheet, like History) ---- */
+  var opIdx = 0, opRows = [];
+  function openOpenings(){
+    sheetOpen = 'openings';
+    opIdx = 0;
+    navPush();
+    document.getElementById('openingsSheet').style.display = 'flex';
+    renderOpenings();
+  }
+  function paintOp(){
+    for (var i = 0; i < opRows.length; i++)
+      opRows[i].row.className = 'hrow' + (i === opIdx ? ' on' : '');
+    var cur = opRows[opIdx];
+    if (cur && cur.row.scrollIntoView){ try{ cur.row.scrollIntoView({ block: 'nearest' }); }catch(e){} }
+  }
+  function opMove(d){
+    if (!opRows.length) return;
+    opIdx = Math.max(0, Math.min(opRows.length - 1, opIdx + d));
+    paintOp();
+    beep(660, 0.05, 'sine', 0.03);
+  }
+  function opActivate(){
+    var cur = opRows[opIdx];
+    if (cur) cur.btn.click();
+  }
+  function renderOpenings(){
+    var box = document.getElementById('opList');
+    box.innerHTML = '';
+    opRows = [];
+    var prog = loadOp();
+    OPENINGS.forEach(function(op){
+      var p = prog[op.id] || {};
+      var row = document.createElement('div');
+      row.className = 'hrow';
+      var status = p.practiced ? '\u2713 practiced' : p.learned ? '\uD83D\uDCD6 learned' : 'new';
+      row.innerHTML = '<div class="hmain"><div class="htitle">' + op.name + '</div>' +
+        '<div class="hsub">Play as ' + (op.side === 'w' ? 'White' : 'Black') + ' \u00B7 ' +
+        Math.ceil(op.line.length / 2) + ' moves \u00B7 ' + status + '</div></div>';
+      var btn = document.createElement('button');
+      btn.className = 'ghostBtn'; btn.textContent = 'Learn';
+      btn.addEventListener('click', function(){ startLearn(op); });
+      row.appendChild(btn);
+      box.appendChild(row);
+      opRows.push({ row: row, btn: btn });
+    });
+    paintOp();
+  }
+  document.getElementById('opClose').addEventListener('click', function(){ closeSheets(); });
+
+  /* ---- shared session setup ---- */
+  function opSession(op, mode){
+    var built = opBuild(op);
+    if (!built) return false;
+    if (sheetOpen) closeSheets();
+    rateAbandon(); /* leaving a puzzle for an opening settles it */
+    navPush();
+    currentOpening = op;
+    opStates = built.states; opMoves = built.moves;
+    openingMode = mode;
+    gameGen++;
+    puzzleMode = false; currentPuzzle = null;
+    document.getElementById('puzzleBar').style.display = 'none';
+    document.getElementById('stage').classList.remove('puzzling');
+    playerColor = op.side;
+    orientation = op.side;
+    selected = null; gameOver = false; thinking = false;
+    gameSaved = true; savedRec = null;
+    hintFrom = -1; hintTo = -1;
+    closePromo();
+    resignOpen = false;
+    document.getElementById('resignOverlay').style.display = 'none';
+    document.getElementById('movesOverlay').style.display = 'none';
+    document.getElementById('openingDone').style.display = 'none';
+    document.getElementById('openingBar').style.display = 'flex';
+    document.getElementById('opRestartBtn').style.display = mode === 'practice' ? '' : 'none';
+    document.getElementById('opMainBtn').textContent = mode === 'practice' ? 'Hint' : 'Practice';
+    return true;
+  }
+  function opLogFor(k){
+    var log = [{ state: opStates[0], from: -1, to: -1, san: null }];
+    for (var i = 0; i < k; i++)
+      log.push({ state: opStates[i + 1], from: opMoves[i].from, to: opMoves[i].to, san: currentOpening.line[i] });
+    return log;
+  }
+  function updateOpeningBar(){
+    if (!currentOpening) return;
+    var op = currentOpening, lab = document.getElementById('openingLabel');
+    if (openingMode === 'learn'){
+      lab.textContent = '\uD83D\uDCD6 ' + op.name + ' \u00B7 ' + opPly + '/' + op.line.length;
+    } else {
+      var total = 0, done = 0;
+      for (var i = 0; i < op.line.length; i++)
+        if (opStates[i].turn === op.side){ total++; if (i < opPly) done++; }
+      lab.textContent = '\uD83C\uDFAF ' + op.name + ' \u00B7 move ' + Math.min(done + 1, total) + ' of ' + total +
+        (opMistakes ? ' \u00B7 \u2717 ' + opMistakes : '');
+    }
+  }
+
+  /* ---- Learn ---- */
+  function startLearn(op){
+    if (!opSession(op, 'learn')) return;
+    locked = true; /* the board is a book here, not a game */
+    opMark(op.id, 'learned');
+    opPly = 0;
+    showOpPly(0);
+  }
+  function opCaption(){
+    var op = currentOpening;
+    if (opPly === 0) return op.name + ' — ' + op.idea;
+    var i = opPly - 1;
+    var no = Math.floor(i / 2) + 1;
+    var mover = opStates[i].turn;
+    var txt = no + (mover === 'w' ? '. ' : '\u2026 ') + op.line[i];
+    if (op.notes && op.notes[i]) txt += ' — ' + op.notes[i];
+    else txt += mover === op.side ? ' — your move in the line.' : ' — the reply.';
+    return txt;
+  }
+  function showOpPly(k){
+    if (!currentOpening) return;
+    opPly = Math.max(0, Math.min(currentOpening.line.length, k));
+    gameLog = opLogFor(opPly);
+    cursor = gameLog[opPly].from >= 0 ? gameLog[opPly].from : (currentOpening.side === 'w' ? 52 : 12);
+    refresh();
+    updateOpeningBar();
+    document.getElementById('status').textContent = opCaption();
+  }
+  function opStep(d){
+    if (openingMode !== 'learn') return;
+    showOpPly(opPly + d);
+    beep(660, 0.05, 'sine', 0.03);
+  }
+
+  /* ---- Practice ---- */
+  function startPractice(op){
+    if (!opSession(op, 'practice')) return;
+    locked = false;
+    opPly = 0; opMistakes = 0; opPlyMisses = 0;
+    gameLog = opLogFor(0);
+    refresh();
+    updateOpeningBar();
+    opPromptOrReply();
+  }
+  function opPromptOrReply(){
+    if (openingMode !== 'practice' || !currentOpening) return;
+    if (opPly >= currentOpening.line.length){ onOpeningComplete(); return; }
+    if (opStates[opPly].turn !== currentOpening.side){
+      thinking = true;
+      setTimeout(function(){
+        if (openingMode !== 'practice' || !currentOpening){ thinking = false; return; }
+        var mv = opMoves[opPly];
+        doMove(mv, legalMoves(state()));
+        opPly++; opPlyMisses = 0;
+        thinking = false;
+        refresh();
+        updateOpeningBar();
+        opPromptOrReply();
+      }, 600);
+    } else {
+      updateOpeningBar();
+      var no = Math.floor(opPly / 2) + 1;
+      document.getElementById('status').textContent =
+        'Your move — find move ' + no + ' for ' + (currentOpening.side === 'w' ? 'White' : 'Black') + '.';
+    }
+  }
+  function tryOpeningMove(m){
+    var exp = opMoves[opPly];
+    if (!exp || m.from !== exp.from || m.to !== exp.to || (exp.promo || null) !== (m.promo || null)){
+      selected = null;
+      render();
+      opMistakes++; opPlyMisses++;
+      document.getElementById('status').textContent = opPlyMisses >= 2
+        ? 'Not the line — the move is ' + currentOpening.line[opPly] + '.'
+        : 'Not the line — try again.';
+      var b = document.getElementById('board');
+      b.classList.remove('shaking');
+      void b.offsetWidth;
+      b.classList.add('shaking');
+      beep(160, 0.12, 'square', 0.04);
+      updateOpeningBar();
+      return;
+    }
+    doMove(m, currentLegal);
+    opPly++; opPlyMisses = 0;
+    beep(1174, 0.07, 'sine', 0.04);
+    refresh();
+    opPromptOrReply();
+  }
+  function onOpeningComplete(){
+    locked = true;
+    opMark(currentOpening.id, 'practiced');
+    document.getElementById('openingDoneText').textContent =
+      'You played the ' + currentOpening.name + ' from start to finish' +
+      (opMistakes ? ' — with ' + opMistakes + ' wrong turn' + (opMistakes === 1 ? '' : 's') + ' along the way.' : ' — flawless, not a single wrong turn.');
+    document.getElementById('openingDone').style.display = 'flex';
+    navPush();
+    document.getElementById('status').textContent = 'Line complete!';
+    beep(784, 0.1, 'sine', 0.04);
+    setTimeout(function(){ beep(988, 0.1, 'sine', 0.04); }, 110);
+    setTimeout(function(){ beep(1318, 0.16, 'sine', 0.045); }, 220);
+  }
+  function exitOpening(){
+    if (document.getElementById('openingDone').style.display === 'flex') navSyncPop();
+    openingMode = '';
+    currentOpening = null;
+    document.getElementById('openingBar').style.display = 'none';
+    document.getElementById('openingDone').style.display = 'none';
+    locked = false;
+    openSidePicker();
+  }
+  function exitOpeningToList(){
+    openingMode = '';
+    currentOpening = null;
+    document.getElementById('openingBar').style.display = 'none';
+    document.getElementById('openingDone').style.display = 'none';
+    locked = false;
+    openOpenings();
+  }
+  document.getElementById('opMainBtn').addEventListener('click', function(){
+    if (openingMode === 'learn' && currentOpening) startPractice(currentOpening);
+    else if (openingMode === 'practice') document.getElementById('hintBtn').click();
+  });
+  document.getElementById('opRestartBtn').addEventListener('click', function(){
+    if (openingMode === 'practice' && currentOpening) startPractice(currentOpening);
+  });
+  document.getElementById('opExitBtn').addEventListener('click', function(){
+    if (openingMode) exitOpening();
+  });
+  document.getElementById('opDoneNext').addEventListener('click', function(){
+    if (document.getElementById('openingDone').style.display === 'flex') navSyncPop();
+    document.getElementById('openingDone').style.display = 'none';
+    var idx = OPENINGS.indexOf(currentOpening);
+    startLearn(OPENINGS[(idx + 1) % OPENINGS.length]);
+  });
+  document.getElementById('opDoneAgain').addEventListener('click', function(){
+    if (document.getElementById('openingDone').style.display === 'flex') navSyncPop();
+    document.getElementById('openingDone').style.display = 'none';
+    if (currentOpening) startPractice(currentOpening);
+  });
+  document.getElementById('opDoneList').addEventListener('click', function(){
+    if (document.getElementById('openingDone').style.display === 'flex') navSyncPop();
+    document.getElementById('openingDone').style.display = 'none';
+    exitOpeningToList();
   });
 
   /* ---- Day streak + welcome-back ------------------------------------ */
@@ -3155,6 +3548,7 @@ if (typeof document !== 'undefined'){
      half-solved puzzles alike. ---- */
   var PROGRESS_KEY = 'glasschess.progress.v1';
   function saveProgress(){
+    if (openingMode) return;
     try{
       localStorage.setItem(PROGRESS_KEY, JSON.stringify({
         v: 1,
