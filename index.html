@@ -216,6 +216,7 @@
     <button class="railBtn" id="railHint"><span class="ric">💡</span><span class="rlab">Hint</span></button>
     <button class="railBtn" id="railUndo"><span class="ric">↩</span><span class="rlab">Undo</span></button>
     <button class="railBtn" id="railResign"><span class="ric">⚑</span><span class="rlab" id="railResignLab">Resign</span></button>
+    <button class="railBtn" id="railFlip"><span class="ric">🔄</span><span class="rlab">Flip</span></button>
     <button class="railBtn" id="railMenu"><span class="ric">☰</span><span class="rlab">Menu</span></button>
   </div>
   <div id="main">
@@ -320,7 +321,7 @@
     <div id="menuGrid"></div>
     <button class="backBtn" id="voiceBar" style="width:min(94%,118vmin);margin-top:1.2vmin">🎤 Voice moves · <span id="voiceState">Off</span></button>
     <div class="menuHint">Swipes move · Pinch selects · Shake closes</div>
-    <div class="menuHint" style="opacity:.55">The Chess Display · build Nov 6 v32</div>
+    <div class="menuHint" style="opacity:.55">The Chess Display · build Nov 6 v33</div>
   </div>
   <div class="overlay" id="diffOverlay">
     <div id="diffGrid"></div>
@@ -1601,16 +1602,22 @@ if (typeof document !== 'undefined'){
   }
 
   /* ---- Flip board: view-only. Never touches playerColor, the position,
-     or whose turn it is, and never schedules a computer move. The 600 ms
-     guard is the v15-v17 lesson: one pinch can arrive as two signals,
-     and a toggle that fires twice looks exactly like a broken button. ---- */
+     or whose turn it is, and never schedules a computer move. Guards: the
+     rail's own 900 ms same-button stamp, plus 1200 ms here — one pinch
+     can arrive as two signals on the glasses (the v15-v17 lesson, and
+     v32's menu tile proved 600 ms alone is too short there), and a
+     toggle that fires twice looks exactly like a broken button. The
+     flipped view is session-only: it is never restored, so the app
+     always opens with the player's own side at the bottom. ---- */
   var lastFlipAt = 0;
   function flipBoard(){
     var now = Date.now();
-    if (now - lastFlipAt < 600) return;
+    if (now - lastFlipAt < 1200) return;
     lastFlipAt = now;
     viewFlipped = !viewFlipped;
     render();
+    document.getElementById('status').textContent =
+      'Board flipped \u2014 ' + (orientation === 'w' ? 'White' : 'Black') + ' at the bottom';
     saveProgress();
     beep(520, 0.05, 'sine', 0.03);
   }
@@ -1867,7 +1874,7 @@ if (typeof document !== 'undefined'){
   var sideAskPending = false;
   var SIDE_ORDER = ['w', 'b', 'r'];
   var COLOR_ORDER = ['green', 'blue', 'red', 'gold', 'mono'];
-  var RAIL_IDS = ['railHint', 'railUndo', 'railResign', 'railMenu'];
+  var RAIL_IDS = ['railHint', 'railUndo', 'railResign', 'railFlip', 'railMenu'];
 
   function setZone(z){
     uiZone = z;
@@ -1908,6 +1915,7 @@ if (typeof document !== 'undefined'){
       if (puzzleMode) document.getElementById('puzzleExit').click();
       else document.getElementById('resignBtn').click();
     }
+    else if (id === 'railFlip') flipBoard();
   }
   function buildMenuTiles(){
     var tiles = [];
@@ -1920,20 +1928,12 @@ if (typeof document !== 'undefined'){
       add('Hint', '', closeThen('hintBtn'));
       add('Exit puzzle', '', closeThen('puzzleExit'));
       add('Board color', '', function(){ openColors(); });
-      add('Flip board', orientation === 'w' ? 'White down' : 'Black down', function(){
-        flipBoard();
-        menuTiles = buildMenuTiles(); renderTiles();
-      });
       add('Close menu', '', function(){ closeMenu(); });
     } else {
       add('New game', '', function(){ openDiffs(); });
       add('Puzzles', '', function(){ closeMenu(); dealRandomPuzzle(); });
       add('History', '', function(){ closeMenu(); openHistory(); });
       add('Board color', '', function(){ openColors(); });
-      add('Flip board', orientation === 'w' ? 'White down' : 'Black down', function(){
-        flipBoard();
-        menuTiles = buildMenuTiles(); renderTiles();
-      });
       add('Head gestures', headOn ? 'On' : 'Off', function(){
         document.getElementById('headBtn').click();
         setTimeout(function(){ if (uiZone === 'menu') renderTiles(); }, 500);
@@ -2919,7 +2919,6 @@ if (typeof document !== 'undefined'){
         playerColor: playerColor,
         difficulty: difficulty,
         orientation: orientation,
-        flipped: viewFlipped,
         finished: !!(gameOver || locked),
         log: gameLog.map(function(e){
           return { fen: stateToFEN(e.state), from: e.from, to: e.to, san: e.san };
@@ -2943,7 +2942,7 @@ if (typeof document !== 'undefined'){
     playerColor = data.playerColor === 'b' ? 'b' : 'w';
     if (DIFFS[data.difficulty]) difficulty = data.difficulty;
     orientation = data.orientation === 'b' ? 'b' : 'w';
-    viewFlipped = !!data.flipped;
+    viewFlipped = false; /* a flipped view never carries into a new session */
     if (puzzleMode){
       var made = 0;
       for (var i = 1; i < gameLog.length; i++)
