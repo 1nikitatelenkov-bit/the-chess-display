@@ -338,7 +338,7 @@
     <div id="menuGrid"></div>
     <button class="backBtn" id="voiceBar" style="width:min(94%,118vmin);margin-top:1.2vmin">🎤 Voice moves · <span id="voiceState">Off</span></button>
     <div class="menuHint">Swipes move · Pinch selects · Shake closes</div>
-    <div class="menuHint" style="opacity:.55">The Chess Display · build Nov 7 v38</div>
+    <div class="menuHint" style="opacity:.55">The Chess Display · build Nov 7 v39</div>
   </div>
   <div class="overlay" id="diffOverlay">
     <div id="diffGrid"></div>
@@ -1045,7 +1045,8 @@ if (typeof document !== 'undefined'){
     renderBar('bot', botSide);
     if (puzzleMode && currentPuzzle){
       document.getElementById('topName').textContent = '\uD83E\uDDE9 Puzzle';
-      document.getElementById('topSub').textContent = 'Mate in ' + currentPuzzle.mateIn + ' \u00B7 Solved ' + loadPz().count;
+      var pzTop = loadPz();
+      document.getElementById('topSub').textContent = 'Mate in ' + currentPuzzle.mateIn + ' \u00B7 \u26A1 ' + pzTop.rating + ' \u00B7 Solved ' + pzTop.count;
       document.getElementById('botName').textContent = botSide === 'w' ? 'White' : 'Black';
       document.getElementById('botSub').textContent = 'You';
     } else {
@@ -1758,6 +1759,7 @@ if (typeof document !== 'undefined'){
     if (puzzleMode){
       var hm = puzzleHintMove(st, puzzleMovesLeft);
       if (hm){
+        pzHintUsed = true;
         hintFrom = hm.from; hintTo = hm.to;
         render();
         setTimeout(function(){ hintFrom = -1; hintTo = -1; render(); }, 1400);
@@ -2447,13 +2449,13 @@ if (typeof document !== 'undefined'){
   function loadPz(){
     try{
       var s = JSON.parse(localStorage.getItem(PZ_KEY) || 'null');
-      if (s && typeof s.count === 'number') return { count: s.count, seen: s.seen || [] };
+      if (s && typeof s.count === 'number') return { count: s.count, seen: s.seen || [], rating: (typeof s.rating === 'number') ? s.rating : 800, played: s.played || 0 };
     }catch(e){}
     try{ /* migrate the old fixed-list progress into the solved count */
       var old = JSON.parse(localStorage.getItem('glasschess.puzzles.v1') || '[]');
-      if (old && old.length) return { count: old.length, seen: [] };
+      if (old && old.length) return { count: old.length, seen: [], rating: 800, played: 0 };
     }catch(e){}
-    return { count: 0, seen: [] };
+    return { count: 0, seen: [], rating: 800, played: 0 };
   }
   function savePz(s){
     try{ localStorage.setItem(PZ_KEY, JSON.stringify(s)); }catch(e){}
@@ -2586,14 +2588,17 @@ if (typeof document !== 'undefined'){
   var pzDealNo = 0;
   function generatePuzzle(seen){
     pzDealNo++;
+    var want = pickMateTarget(loadPz().rating || 800);
     for (var a = 0; a < 40; a++){
       var raw = buildCandidate();
       if (!raw) continue;
       var st = parseFEN(puzzleStateToFEN(raw)); /* normalize into a full engine state */
-      /* alternate deals lead with mate-in-3 attempts so deeper puzzles appear regularly */
-      var maxD = (pzDealNo % 2 === 0) ? (a < 12 ? 3 : 2) : (a < 28 ? 2 : 3);
+      /* the first 30 attempts hunt the depth the rating calls for;
+         after that, any verified mate goes (deep mates are scarce) */
+      var maxD = a < 30 ? want : (a < 36 ? 3 : 2);
       var d = validateCandidate(st, maxD);
       if (!d) continue;
+      if (a < 30 && d !== want) continue;
       var dealt = transformState(st);
       var fen = puzzleStateToFEN(dealt);
       if (seen.indexOf(fen) >= 0) continue;
@@ -2602,9 +2607,41 @@ if (typeof document !== 'undefined'){
     return null;
   }
 
+  /* ---- Tactics rating: an Elo against the puzzle itself. A clean
+     solve (no misses, no hint) scores 1, an assisted solve 0.5, and
+     walking away mid-attempt 0 — untouched puzzles never count. The
+     rating steers the generator: climbs bring deeper mates. ---- */
+  var pzMisses = 0, pzHintUsed = false, pzRated = true;
+  function puzzleRatingFor(mateIn){ return mateIn <= 1 ? 700 : mateIn === 2 ? 1000 : 1300; }
+  function pickMateTarget(rating){
+    var bands = rating < 850 ? [75, 22, 3] : rating < 1050 ? [55, 35, 10] : rating < 1250 ? [35, 42, 23] : [20, 42, 38];
+    var roll = Math.random() * 100;
+    return roll < bands[0] ? 1 : roll < bands[0] + bands[1] ? 2 : 3;
+  }
+  function ratePuzzle(score){
+    if (pzRated || !currentPuzzle) return undefined;
+    pzRated = true;
+    var pzd = loadPz();
+    var R = pzd.rating || 800;
+    var exp = 1 / (1 + Math.pow(10, (puzzleRatingFor(currentPuzzle.mateIn) - R) / 400));
+    var K = (pzd.played || 0) < 30 ? 32 : 16;
+    var delta = Math.round(K * (score - exp));
+    pzd.rating = Math.max(100, R + delta);
+    pzd.played = (pzd.played || 0) + 1;
+    savePz(pzd);
+    return delta;
+  }
+  function rateAbandon(){
+    if (!puzzleMode || !currentPuzzle || pzRated) return;
+    if (pzMisses > 0 || gameLog.length > 1) ratePuzzle(0);
+    else pzRated = true; /* never attempted: no record */
+  }
+
   /* ---- Dealing + play ---- */
   var currentPuzzle = null; /* {fen, mateIn} */
   function startPuzzleDeal(pz){
+    rateAbandon();
+    pzMisses = 0; pzHintUsed = false; pzRated = false;
     navPush();
     currentPuzzle = pz;
     var st = parseFEN(pz.fen);
@@ -2635,6 +2672,7 @@ if (typeof document !== 'undefined'){
   }
   function dealRandomPuzzle(){
     if (welcomeOpen) return;
+    rateAbandon();
     document.getElementById('status').textContent = 'Dealing a puzzle\u2026';
     setTimeout(function(){
       var pzd = loadPz();
@@ -2649,12 +2687,15 @@ if (typeof document !== 'undefined'){
   function updatePuzzleBar(){
     var pz = currentPuzzle;
     if (!pz) return;
+    var pzdNow = loadPz();
     document.getElementById('puzzleLabel').textContent =
       '\uD83E\uDDE9 Mate in ' + pz.mateIn +
       (puzzleMovesLeft < pz.mateIn ? ' · ' + puzzleMovesLeft + ' to go' : '') +
-      ' · Solved ' + loadPz().count;
+      ' · \u26A1 ' + pzdNow.rating +
+      ' · Solved ' + pzdNow.count;
   }
   function exitPuzzle(){
+    rateAbandon();
     if (document.getElementById('puzzleWin').style.display === 'flex') navSyncPop();
     puzzleMode = false;
     currentPuzzle = null;
@@ -2669,6 +2710,7 @@ if (typeof document !== 'undefined'){
     if (!puzzleMoveCorrect(st, m, puzzleMovesLeft)){
       selected = null;
       render();
+      pzMisses++;
       document.getElementById('status').textContent = 'Not that one — there is a forced mate. Try again!';
       var b = document.getElementById('board');
       b.classList.remove('shaking');
@@ -2708,11 +2750,13 @@ if (typeof document !== 'undefined'){
   }
   function onPuzzleSolved(){
     locked = true;
+    var delta = ratePuzzle((pzMisses === 0 && !pzHintUsed) ? 1 : 0.5);
     var pzd = loadPz();
     pzd.count++;
     savePz(pzd);
     document.getElementById('puzzleWinText').textContent =
-      'You have solved ' + pzd.count + ' puzzle' + (pzd.count === 1 ? '' : 's') + '. The next one is brand new.';
+      'You have solved ' + pzd.count + ' puzzle' + (pzd.count === 1 ? '' : 's') + '. ' +
+      'Tactics rating ' + pzd.rating + (delta !== undefined ? ' (' + (delta >= 0 ? '+' : '') + delta + ')' : '') + '. The next one is brand new.';
     document.getElementById('puzzleWin').style.display = 'flex';
     navPush();
     document.getElementById('status').textContent = 'Puzzle solved!';
