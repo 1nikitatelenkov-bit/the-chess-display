@@ -138,6 +138,9 @@
   #openingLabel{flex:1;font-size:2.5vmin;font-weight:700;color:#e8e6e1;white-space:nowrap;overflow:hidden}
   #openingBar .btn{flex:0 0 auto;padding:1vmin 2.2vmin}
   #opList{display:flex;flex-direction:column;gap:1vmin;overflow-y:auto}
+  #opGuide{background:#322f29;border-radius:1.1vmin;padding:1.1vmin 1.4vmin}
+  #opGuideNow{font-size:2.5vmin;line-height:1.35;color:#e8e6e1}
+  #opGuideNext{font-size:2.5vmin;line-height:1.35;color:#ffcf5e;margin-top:.4vmin}
   #puzzleLabel{flex:1;font-size:2.3vmin;font-weight:700;color:#ffb300}
   #puzzleBar .btn{flex:0 0 auto;padding:1vmin 2.2vmin}
   .puzzling .captured,.puzzling .mat{visibility:hidden}
@@ -200,6 +203,7 @@
   #controls{display:none}
   #puzzleBar{display:none !important}
   #openingBar{display:none !important}
+  #opGuide{display:none !important}
   #statusRow{width:min(100%,calc(100dvh - 29vmin));margin:0 auto}
   #help{width:min(100%,calc(100dvh - 29vmin));margin:0 auto;height:auto;min-height:2.8vmin;padding:.3vmin 0}
   #board{border-radius:.7vmin;overflow:hidden}
@@ -326,6 +330,10 @@
     <div class="mat" id="botMat"></div>
   </div>
 
+  <div id="opGuide" style="display:none">
+    <div id="opGuideNow"></div>
+    <div id="opGuideNext"></div>
+  </div>
   <div id="statusRow"><div id="status">Your move</div><div id="streakChip"></div></div>
 
   <div id="controls">
@@ -357,9 +365,8 @@
   </div>
   <div class="overlay" id="menuOverlay">
     <div id="menuGrid"></div>
-    <button class="backBtn" id="voiceBar" style="width:min(94%,118vmin);margin-top:1.2vmin">🎤 Voice moves · <span id="voiceState">Off</span></button>
     <div class="menuHint">Swipes move · Pinch selects · Shake closes</div>
-    <div class="menuHint" style="opacity:.55">The Chess Display · build Nov 7 v40</div>
+    <div class="menuHint" style="opacity:.55">The Chess Display · build Nov 7 v41</div>
   </div>
   <div class="overlay" id="diffOverlay">
     <div id="diffGrid"></div>
@@ -1098,7 +1105,7 @@ if (typeof document !== 'undefined'){
       statusEl.textContent = lastSan ? chk + 'Last: ' + lastSan + ' \u00B7 Your move' : 'Your move';
     } else statusEl.textContent = 'Computer to move';
     if (!gameOver && !locked) endDismissed = false;
-    var showEnd = (gameOver || locked) && !endDismissed && document.getElementById('puzzleWin').style.display !== 'flex';
+    var showEnd = (gameOver || locked) && !endDismissed && !openingMode && document.getElementById('puzzleWin').style.display !== 'flex';
     if (showEnd && !endWasShown) navPush();
     endWasShown = showEnd;
     document.getElementById('endOverlay').style.display = showEnd ? 'flex' : 'none';
@@ -2035,7 +2042,6 @@ if (typeof document !== 'undefined'){
   var colorIdx = 0;
   var diffBackFocus = false;
   var colorBackFocus = false;
-  var voiceFocus = false;
   var sideIdx = 0;
   var sideAskPending = false;
   var SIDE_ORDER = ['w', 'b', 'r'];
@@ -2094,6 +2100,10 @@ if (typeof document !== 'undefined'){
       add('Hint', '', closeThen('hintBtn'));
       add('Exit puzzle', '', closeThen('puzzleExit'));
       add('Board color', '', function(){ openColors(); });
+      add('Voice moves', voiceOn ? 'On' : (voiceSupported() ? 'Off' : 'n/a'), function(){
+        toggleVoice();
+        setTimeout(function(){ if (uiZone === 'menu') renderTiles(); }, 500);
+      });
       add('Close menu', '', function(){ closeMenu(); });
     } else if (openingMode){
       var closeThenO = function(id){ return function(){ closeMenu(); document.getElementById(id).click(); }; };
@@ -2104,6 +2114,11 @@ if (typeof document !== 'undefined'){
       }
       add('All openings', '', function(){ closeMenu(); exitOpeningToList(); });
       add('Board color', '', function(){ openColors(); });
+      add('Voice moves', voiceOn ? 'On' : (voiceSupported() ? 'Off' : 'n/a'), function(){
+        toggleVoice();
+        setTimeout(function(){ if (uiZone === 'menu') renderTiles(); }, 500);
+      });
+
       add('Exit opening', '', closeThenO('opExitBtn'));
       add('Close menu', '', function(){ closeMenu(); });
     } else {
@@ -2116,6 +2131,10 @@ if (typeof document !== 'undefined'){
         document.getElementById('headBtn').click();
         setTimeout(function(){ if (uiZone === 'menu') renderTiles(); }, 500);
       });
+      add('Voice moves', voiceOn ? 'On' : (voiceSupported() ? 'Off' : 'n/a'), function(){
+        toggleVoice();
+        setTimeout(function(){ if (uiZone === 'menu') renderTiles(); }, 500);
+      });
       add('Close menu', '', function(){ closeMenu(); });
     }
     return tiles;
@@ -2125,7 +2144,7 @@ if (typeof document !== 'undefined'){
     grid.innerHTML = '';
     menuTiles.forEach(function(t, i){
       var el = document.createElement('button');
-      el.className = 'tile' + (i === menuIdx && !voiceFocus ? ' on' : '');
+      el.className = 'tile' + (i === menuIdx ? ' on' : '');
       el.innerHTML = '<span>' + t.label + '</span>' +
         (t.value ? '<span class="val">' + t.value + '</span>' : '');
       el.addEventListener('click', function(){ menuIdx = i; renderTiles(); menuActivate(); });
@@ -2209,15 +2228,12 @@ if (typeof document !== 'undefined'){
     navPush();
     menuTiles = buildMenuTiles();
     menuIdx = 0;
-    voiceFocus = false;
     document.getElementById('menuOverlay').style.display = 'flex';
     setZone('menu');
     renderTiles();
-    renderVoiceBar();
   }
   function closeMenu(){
     var wasOpen = menuOpen;
-    voiceFocus = false;
     document.getElementById('menuOverlay').style.display = 'none';
     document.getElementById('diffOverlay').style.display = 'none';
     document.getElementById('colorOverlay').style.display = 'none';
@@ -2228,7 +2244,6 @@ if (typeof document !== 'undefined'){
   function backToMenu(){
     diffBackFocus = false;
     colorBackFocus = false;
-    voiceFocus = false;
     document.getElementById('diffOverlay').style.display = 'none';
     document.getElementById('colorOverlay').style.display = 'none';
     document.getElementById('sideOverlay').style.display = 'none';
@@ -2236,7 +2251,6 @@ if (typeof document !== 'undefined'){
     menuTiles = buildMenuTiles();
     setZone('menu');
     renderTiles();
-    renderVoiceBar();
   }
   var diffIdx = 3;
   function renderDiffTiles(){
@@ -2359,20 +2373,13 @@ if (typeof document !== 'undefined'){
         }
       }
     } else {
-      if (voiceFocus){
-        if (dy < 0){ voiceFocus = false; renderTiles(); renderVoiceBar(); }
-      } else {
-        var rows = Math.ceil(menuTiles.length / 3);
-        var col = menuIdx % 3, row = (menuIdx / 3) | 0;
-        if (dy > 0 && row === rows - 1){ voiceFocus = true; renderTiles(); renderVoiceBar(); }
-        else {
-          row = Math.max(0, Math.min(rows - 1, row + dy));
-          var rowTiles = row === rows - 1 ? menuTiles.length - 3 * (rows - 1) : 3;
-          col = Math.max(0, Math.min(rowTiles - 1, col + dx));
-          menuIdx = row * 3 + col;
-          renderTiles();
-        }
-      }
+      var rows = Math.ceil(menuTiles.length / 3);
+      var col = menuIdx % 3, row = (menuIdx / 3) | 0;
+      row = Math.max(0, Math.min(rows - 1, row + dy));
+      var rowTiles = row === rows - 1 ? menuTiles.length - 3 * (rows - 1) : 3;
+      col = Math.max(0, Math.min(rowTiles - 1, col + dx));
+      menuIdx = row * 3 + col;
+      renderTiles();
     }
     beep(660, 0.05, 'sine', 0.03);
   }
@@ -2380,7 +2387,6 @@ if (typeof document !== 'undefined'){
     if (uiZone === 'side'){ pickSide(); return; }
     if (uiZone === 'diff'){ if (diffBackFocus) backToMenu(); else pickDifficulty(); return; }
     if (uiZone === 'color'){ if (colorBackFocus) backToMenu(); else pickColor(); return; }
-    if (voiceFocus){ toggleVoice(); renderVoiceBar(); return; }
     var t = menuTiles[menuIdx];
     if (t) t.fn();
   }
@@ -2403,12 +2409,6 @@ if (typeof document !== 'undefined'){
   function flashStatus(msg){
     document.getElementById('status').textContent = msg;
     setTimeout(function(){ render(); }, 1700);
-  }
-  function renderVoiceBar(){
-    var bar = document.getElementById('voiceBar');
-    if (!bar) return;
-    bar.className = 'backBtn' + (voiceFocus ? ' on' : '');
-    document.getElementById('voiceState').textContent = voiceOn ? 'On' : (voiceSupported() ? 'Off' : 'n/a');
   }
   function toggleVoice(){
     if (voiceOn){ stopVoice(); return; }
@@ -2434,12 +2434,12 @@ if (typeof document !== 'undefined'){
       voiceRec.start();
       flashStatus('Voice on — say a move: "e4", "knight f3", "castle"');
     }catch(e){ voiceOn = false; voiceRec = null; }
-    renderVoiceBar();
+    if (menuOpen) renderTiles();
   }
   function stopVoice(){
     voiceOn = false;
     if (voiceRec){ try{ voiceRec.stop(); }catch(e){} voiceRec = null; }
-    renderVoiceBar();
+    if (menuOpen) renderTiles();
   }
   function handleVoiceCommand(raw){
     /* Speech engines rarely return "e4" — they hear "e four", "knight f
@@ -2496,10 +2496,6 @@ if (typeof document !== 'undefined'){
     flashStatus('You said: ' + raw);
     submitMove(move);
   }
-  document.getElementById('voiceBar').addEventListener('click', function(){
-    toggleVoice();
-    renderVoiceBar();
-  });
 
   /* ---- Puzzles: endless, generated + solver-verified -----------------
      Puzzles are generated on the fly from mating-pattern templates and
@@ -2971,6 +2967,7 @@ if (typeof document !== 'undefined'){
       row.className = 'hrow';
       var status = p.practiced ? '\u2713 practiced' : p.learned ? '\uD83D\uDCD6 learned' : 'new';
       row.innerHTML = '<div class="hmain"><div class="htitle">' + op.name + '</div>' +
+        '<div class="hsub">' + op.idea + '</div>' +
         '<div class="hsub">Play as ' + (op.side === 'w' ? 'White' : 'Black') + ' \u00B7 ' +
         Math.ceil(op.line.length / 2) + ' moves \u00B7 ' + status + '</div></div>';
       var btn = document.createElement('button');
@@ -3009,6 +3006,7 @@ if (typeof document !== 'undefined'){
     document.getElementById('movesOverlay').style.display = 'none';
     document.getElementById('openingDone').style.display = 'none';
     document.getElementById('openingBar').style.display = 'flex';
+    document.getElementById('opGuide').style.display = 'block';
     document.getElementById('opRestartBtn').style.display = mode === 'practice' ? '' : 'none';
     document.getElementById('opMainBtn').textContent = mode === 'practice' ? 'Hint' : 'Practice';
     return true;
@@ -3041,16 +3039,45 @@ if (typeof document !== 'undefined'){
     opPly = 0;
     showOpPly(0);
   }
+  function opMoveLabel(i){
+    var no = Math.floor(i / 2) + 1;
+    return no + (opStates[i].turn === 'w' ? '. ' : '\u2026 ') + currentOpening.line[i];
+  }
   function opCaption(){
     var op = currentOpening;
     if (opPly === 0) return op.name + ' — ' + op.idea;
     var i = opPly - 1;
-    var no = Math.floor(i / 2) + 1;
-    var mover = opStates[i].turn;
-    var txt = no + (mover === 'w' ? '. ' : '\u2026 ') + op.line[i];
+    var txt = opMoveLabel(i);
     if (op.notes && op.notes[i]) txt += ' — ' + op.notes[i];
-    else txt += mover === op.side ? ' — your move in the line.' : ' — the reply.';
+    else txt += opStates[i].turn === op.side ? ' — your move in the line.' : ' — the reply.';
     return txt;
+  }
+  /* The reading panel under the board: where you are, and — for anyone
+     meeting an opening for the first time — what the next move is and
+     why it belongs to the line, before you step or play. */
+  function updateOpGuide(){
+    if (!currentOpening) return;
+    var op = currentOpening;
+    var nowEl = document.getElementById('opGuideNow');
+    var nextEl = document.getElementById('opGuideNext');
+    if (openingMode === 'learn'){
+      nowEl.textContent = opCaption();
+      nextEl.textContent = opPly < op.line.length
+        ? 'Next: ' + opMoveLabel(opPly) + (op.notes && op.notes[opPly] ? ' — ' + op.notes[opPly] : '')
+        : 'That is the whole line — Practice it to make it yours.';
+    } else if (openingMode === 'practice'){
+      if (opPly >= op.line.length){
+        nowEl.textContent = 'Line complete — nicely done.';
+        nextEl.textContent = '';
+      } else if (opStates[opPly].turn === op.side){
+        nowEl.textContent = 'Your move ' + (Math.floor(opPly / 2) + 1) + ' as ' + (op.side === 'w' ? 'White' : 'Black') + ' — find the move the line plays here.';
+        nextEl.textContent = opPlyMisses >= 2
+          ? 'The move is ' + op.line[opPly] + ' — play it to continue the line.'
+          : (op.notes && op.notes[opPly])
+            ? 'Guide: ' + op.notes[opPly]
+            : 'Guide: follow the plan — develop your pieces, fight for the center, keep your king safe.';
+      }
+    }
   }
   function showOpPly(k){
     if (!currentOpening) return;
@@ -3060,6 +3087,7 @@ if (typeof document !== 'undefined'){
     refresh();
     updateOpeningBar();
     document.getElementById('status').textContent = opCaption();
+    updateOpGuide();
   }
   function opStep(d){
     if (openingMode !== 'learn') return;
@@ -3097,6 +3125,7 @@ if (typeof document !== 'undefined'){
       var no = Math.floor(opPly / 2) + 1;
       document.getElementById('status').textContent =
         'Your move — find move ' + no + ' for ' + (currentOpening.side === 'w' ? 'White' : 'Black') + '.';
+      updateOpGuide();
     }
   }
   function tryOpeningMove(m){
@@ -3114,6 +3143,7 @@ if (typeof document !== 'undefined'){
       b.classList.add('shaking');
       beep(160, 0.12, 'square', 0.04);
       updateOpeningBar();
+      updateOpGuide();
       return;
     }
     doMove(m, currentLegal);
@@ -3140,6 +3170,7 @@ if (typeof document !== 'undefined'){
     openingMode = '';
     currentOpening = null;
     document.getElementById('openingBar').style.display = 'none';
+    document.getElementById('opGuide').style.display = 'none';
     document.getElementById('openingDone').style.display = 'none';
     locked = false;
     openSidePicker();
@@ -3148,6 +3179,7 @@ if (typeof document !== 'undefined'){
     openingMode = '';
     currentOpening = null;
     document.getElementById('openingBar').style.display = 'none';
+    document.getElementById('opGuide').style.display = 'none';
     document.getElementById('openingDone').style.display = 'none';
     locked = false;
     openOpenings();
