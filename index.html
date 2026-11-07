@@ -218,7 +218,6 @@
     <button class="railBtn" id="railHint"><span class="ric">💡</span><span class="rlab">Hint</span></button>
     <button class="railBtn" id="railUndo"><span class="ric">↩</span><span class="rlab">Undo</span></button>
     <button class="railBtn" id="railResign"><span class="ric">⚑</span><span class="rlab" id="railResignLab">Resign</span></button>
-    <button class="railBtn" id="railFlip"><span class="ric">🔄</span><span class="rlab">Flip</span></button>
     <button class="railBtn" id="railMenu"><span class="ric">☰</span><span class="rlab">Menu</span></button>
   </div>
   <div id="main">
@@ -323,7 +322,7 @@
     <div id="menuGrid"></div>
     <button class="backBtn" id="voiceBar" style="width:min(94%,118vmin);margin-top:1.2vmin">🎤 Voice moves · <span id="voiceState">Off</span></button>
     <div class="menuHint">Swipes move · Pinch selects · Shake closes</div>
-    <div class="menuHint" style="opacity:.55">The Chess Display · build Nov 6 v35</div>
+    <div class="menuHint" style="opacity:.55">The Chess Display · build Nov 6 v36</div>
   </div>
   <div class="overlay" id="diffOverlay">
     <div id="diffGrid"></div>
@@ -881,7 +880,6 @@ if (typeof document !== 'undefined'){
     return c;
   }
   var orientation = 'w';
-  var viewFlipped = false; /* view-only: the player's side is at the bottom unless he flips the board himself */
   var difficulty = 'hard';
   var gameLog = [{state: initialState(), from: -1, to: -1, san: null}];
   var selected = null;
@@ -995,9 +993,9 @@ if (typeof document !== 'undefined'){
   }
 
   function render(){
-    /* the player's own pieces sit on the bottom rows — unless he flipped
-       the view himself with the Flip board tile */
-    orientation = viewFlipped ? opp(playerColor) : playerColor;
+    /* the player's own pieces sit on the bottom rows. No exceptions:
+       Flip board was removed entirely at his word (2026-11-06). */
+    orientation = playerColor;
     var st = state();
     var legal = gameOver ? [] : legalMoves(st);
     currentLegal = legal;
@@ -1263,7 +1261,6 @@ if (typeof document !== 'undefined'){
     gameSaved = false; savedRec = null;
     playerColor = (color === 'b') ? 'b' : 'w';
     orientation = playerColor;
-    viewFlipped = false;
     cursor = playerColor === 'w' ? 52 : 12;
     closePromo();
     resignOpen = false;
@@ -1652,27 +1649,6 @@ if (typeof document !== 'undefined'){
     }, 215);
   }
 
-  /* ---- Flip board: view-only. Never touches playerColor, the position,
-     or whose turn it is, and never schedules a computer move. Guards: the
-     rail's own 900 ms same-button stamp, plus 1200 ms here — one pinch
-     can arrive as two signals on the glasses (the v15-v17 lesson, and
-     v32's menu tile proved 600 ms alone is too short there), and a
-     toggle that fires twice looks exactly like a broken button. The
-     flipped view is session-only: it is never restored, so the app
-     always opens with the player's own side at the bottom. ---- */
-  var lastFlipAt = 0;
-  function flipBoard(){
-    var now = Date.now();
-    if (now - lastFlipAt < 1200) return;
-    lastFlipAt = now;
-    viewFlipped = !viewFlipped;
-    render();
-    document.getElementById('status').textContent =
-      'Board flipped \u2014 ' + (orientation === 'w' ? 'White' : 'Black') + ' at the bottom';
-    saveProgress();
-    beep(520, 0.05, 'sine', 0.03);
-  }
-
   /* ---- Controls ---- */
   document.getElementById('newBtn').addEventListener('click', function(){
     if (puzzleMode) exitPuzzle(); else openSidePicker();
@@ -1925,7 +1901,7 @@ if (typeof document !== 'undefined'){
   var sideAskPending = false;
   var SIDE_ORDER = ['w', 'b', 'r'];
   var COLOR_ORDER = ['green', 'blue', 'red', 'gold', 'mono'];
-  var RAIL_IDS = ['railHint', 'railUndo', 'railResign', 'railFlip', 'railMenu'];
+  var RAIL_IDS = ['railHint', 'railUndo', 'railResign', 'railMenu'];
 
   function setZone(z){
     uiZone = z;
@@ -1966,7 +1942,6 @@ if (typeof document !== 'undefined'){
       if (puzzleMode) document.getElementById('puzzleExit').click();
       else document.getElementById('resignBtn').click();
     }
-    else if (id === 'railFlip') flipBoard();
   }
   function buildMenuTiles(){
     var tiles = [];
@@ -2561,7 +2536,6 @@ if (typeof document !== 'undefined'){
     puzzleMovesLeft = pz.mateIn;
     playerColor = st.turn;
     orientation = st.turn;
-    viewFlipped = false;
     gameLog = [{state: st, from: -1, to: -1, san: null}];
     selected = null; gameOver = false; locked = false; thinking = false;
     gameSaved = true; savedRec = null;
@@ -2993,7 +2967,6 @@ if (typeof document !== 'undefined'){
     playerColor = data.playerColor === 'b' ? 'b' : 'w';
     if (DIFFS[data.difficulty]) difficulty = data.difficulty;
     orientation = data.orientation === 'b' ? 'b' : 'w';
-    viewFlipped = false; /* a flipped view never carries into a new session */
     if (puzzleMode){
       var made = 0;
       for (var i = 1; i < gameLog.length; i++)
