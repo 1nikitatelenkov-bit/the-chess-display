@@ -323,7 +323,7 @@
     <div id="menuGrid"></div>
     <button class="backBtn" id="voiceBar" style="width:min(94%,118vmin);margin-top:1.2vmin">🎤 Voice moves · <span id="voiceState">Off</span></button>
     <div class="menuHint">Swipes move · Pinch selects · Shake closes</div>
-    <div class="menuHint" style="opacity:.55">The Chess Display · build Nov 6 v34</div>
+    <div class="menuHint" style="opacity:.55">The Chess Display · build Nov 6 v35</div>
   </div>
   <div class="overlay" id="diffOverlay">
     <div id="diffGrid"></div>
@@ -3013,6 +3013,16 @@ if (typeof document !== 'undefined'){
      network at all (network-first, so updates still arrive). */
   if (typeof navigator !== 'undefined' && 'serviceWorker' in navigator){
     navigator.serviceWorker.register('sw.js').catch(function(){});
+    /* Nudge the update check on every open and every return to the app.
+       A fix that never gets fetched looks exactly like a broken fix —
+       v32 kept being served on the glasses long after v33 shipped. */
+    var nudgeSwUpdate = function(){
+      try{
+        navigator.serviceWorker.getRegistration().then(function(r){ if (r) r.update(); }).catch(function(){});
+      }catch(e){}
+    };
+    nudgeSwUpdate();
+    document.addEventListener('visibilitychange', function(){ if (!document.hidden) nudgeSwUpdate(); });
   }
 
   applyTheme(theme);

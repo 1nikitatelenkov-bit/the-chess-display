@@ -9,7 +9,7 @@
    poison the shell.) Only OK responses are ever cached. The cache
    name carries the build number, and activating a new worker deletes
    every older cache, so a new build always starts from a clean shell. */
-var CACHE = 'chess-display-v34';
+var CACHE = 'chess-display-v35';
 var ASSETS = [
   './',
   './index.html',
