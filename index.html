@@ -364,7 +364,7 @@
   <div class="overlay" id="menuOverlay">
     <div id="menuGrid"></div>
     <div class="menuHint">Swipes move · Pinch selects · Shake closes</div>
-    <div class="menuHint" style="opacity:.55">The Chess Display · build Nov 7 v43</div>
+    <div class="menuHint" style="opacity:.55">The Chess Display · build Nov 9 v44</div>
   </div>
   <div class="overlay" id="diffOverlay">
     <div id="diffGrid"></div>
@@ -1104,10 +1104,26 @@ if (typeof document !== 'undefined'){
     } else statusEl.textContent = 'Computer to move';
     if (!gameOver && !locked) endDismissed = false;
     var showEnd = (gameOver || locked) && !endDismissed && !openingMode && document.getElementById('puzzleWin').style.display !== 'flex';
-    if (showEnd && !endWasShown) navPush();
-    endWasShown = showEnd;
-    document.getElementById('endOverlay').style.display = showEnd ? 'flex' : 'none';
+    /* The finished board gets two seconds alone before the dialog
+       opens — time to look at the mate and celebrate. The pause runs
+       from the first render that sees the finished game; any render
+       that finds the game gone (new game started, dialog dismissed)
+       resets it, and an open menu or sheet holds the dialog back
+       until it closes. */
+    var endReady = false;
     if (showEnd){
+      if (!endSeenAt) endSeenAt = Date.now();
+      var endWait = 2000 - (Date.now() - endSeenAt);
+      if (endWait <= 0 && !menuOpen && !sheetOpen) endReady = true;
+      else if (!endTimer) endTimer = setTimeout(function(){ endTimer = null; refresh(); }, Math.max(250, endWait + 30));
+    } else {
+      endSeenAt = 0;
+      if (endTimer){ clearTimeout(endTimer); endTimer = null; }
+    }
+    if (endReady && !endWasShown) navPush();
+    endWasShown = endReady;
+    document.getElementById('endOverlay').style.display = endReady ? 'flex' : 'none';
+    if (endReady){
       document.getElementById('endTitle').textContent = resultTitle;
       document.getElementById('endText').textContent = resultText;
     }
@@ -1672,9 +1688,30 @@ if (typeof document !== 'undefined'){
     revSpeakText = ex.speak;
     stopSpeak();
     var spans = document.getElementById('revMoves').querySelectorAll('.mv');
+    var curSpan = null;
     for (var j = 0; j < spans.length; j++){
-      spans[j].className = 'mv' + (parseInt(spans[j].getAttribute('data-ply'), 10) === rev.ply ? ' cur' : '');
+      var isCur = parseInt(spans[j].getAttribute('data-ply'), 10) === rev.ply;
+      spans[j].className = 'mv' + (isCur ? ' cur' : '');
+      if (isCur) curSpan = spans[j];
     }
+    revFollowCurrent(curSpan);
+  }
+  /* The move list is a small window on a long game — past roughly three
+     dozen moves the rest sit below the fold, and on the glasses there
+     is no scrollbar to chase them with (swipes step moves instead).
+     Keep the move being reviewed inside the window: scroll only when
+     it falls outside, and only as far as needed to reveal it. Back at
+     the starting position the list returns to the top. */
+  function revFollowCurrent(cur){
+    var box = document.getElementById('revMoves');
+    if (!box) return;
+    if (!cur){ box.scrollTop = 0; return; }
+    try{
+      if (!cur.getBoundingClientRect || !box.getBoundingClientRect) return;
+      var br = box.getBoundingClientRect(), sr = cur.getBoundingClientRect();
+      if (sr.bottom > br.bottom) box.scrollTop = (box.scrollTop || 0) + (sr.bottom - br.bottom) + 6;
+      else if (sr.top < br.top) box.scrollTop = Math.max(0, (box.scrollTop || 0) - (br.top - sr.top) - 6);
+    }catch(e){}
   }
 
   /* ---- Move animation: the moved piece glides from its old square to
@@ -2164,6 +2201,7 @@ if (typeof document !== 'undefined'){
      menu. ---- */
   var navDepth = 0, navSuppress = 0, navInPop = false;
   var endDismissed = false, endWasShown = false;
+  var endSeenAt = 0, endTimer = null;
   var reviewFromEnd = false;
   var sideFromDiff = false, bootNavPending = false;
   function navPush(){
