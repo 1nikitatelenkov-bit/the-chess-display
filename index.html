@@ -364,7 +364,7 @@
   <div class="overlay" id="menuOverlay">
     <div id="menuGrid"></div>
     <div class="menuHint">Swipes move · Pinch selects · Shake closes</div>
-    <div class="menuHint" style="opacity:.55">The Chess Display · build Nov 9 v44</div>
+    <div class="menuHint" style="opacity:.55">The Chess Display · build Nov 11 v45</div>
   </div>
   <div class="overlay" id="diffOverlay">
     <div id="diffGrid"></div>
@@ -1043,9 +1043,11 @@ if (typeof document !== 'undefined'){
   }
 
   function render(){
-    /* the player's own pieces sit on the bottom rows. No exceptions:
-       Flip board was removed entirely at his word (2026-11-06). */
-    orientation = playerColor;
+    /* White is always at the bottom — his word, 2026-11-11. The side
+       picker still decides which color he plays; when he plays Black
+       his pieces sit on the top rows and the "You" label rides the
+       top bar with them. Flip board stays removed entirely. */
+    orientation = 'w';
     var st = state();
     var legal = gameOver ? [] : legalMoves(st);
     currentLegal = legal;
@@ -1332,7 +1334,7 @@ if (typeof document !== 'undefined'){
     resultTitle = ''; resultText = '';
     gameSaved = false; savedRec = null;
     playerColor = (color === 'b') ? 'b' : 'w';
-    orientation = playerColor;
+    orientation = 'w';
     cursor = playerColor === 'w' ? 52 : 12;
     closePromo();
     resignOpen = false;
@@ -1664,7 +1666,7 @@ if (typeof document !== 'undefined'){
       var mv = findMoveBySAN(rev.states[rev.ply - 1], rec.sans[rev.ply - 1]);
       if (mv){ hlFrom = mv.from; hlTo = mv.to; }
     }
-    drawStaticBoard(document.getElementById('revBoard'), st, hlFrom, hlTo, rec.playerColor);
+    drawStaticBoard(document.getElementById('revBoard'), st, hlFrom, hlTo, 'w');
     var cap = document.getElementById('revCaption');
     if (rev.ply === 0) cap.textContent = 'Starting position';
     else {
@@ -2315,8 +2317,8 @@ if (typeof document !== 'undefined'){
     openSidePicker(true);
   }
   /* ---- Side picker: before every new game, ask White / Black / Random.
-     Whichever side he picks sits on the bottom row (orientation follows
-     playerColor on every render). ---- */
+     The pick decides which color he plays — the board itself always
+     shows White at the bottom. ---- */
   function renderSideTiles(){
     var grid = document.getElementById('sideGrid');
     grid.innerHTML = '';
@@ -2756,7 +2758,7 @@ if (typeof document !== 'undefined'){
     puzzleMode = true;
     puzzleMovesLeft = pz.mateIn;
     playerColor = st.turn;
-    orientation = st.turn;
+    orientation = 'w';
     gameLog = [{state: st, from: -1, to: -1, san: null}];
     selected = null; gameOver = false; locked = false; thinking = false;
     gameSaved = true; savedRec = null;
@@ -3032,7 +3034,7 @@ if (typeof document !== 'undefined'){
     document.getElementById('puzzleBar').style.display = 'none';
     document.getElementById('stage').classList.remove('puzzling');
     playerColor = op.side;
-    orientation = op.side;
+    orientation = 'w';
     selected = null; gameOver = false; thinking = false;
     gameSaved = true; savedRec = null;
     hintFrom = -1; hintTo = -1;
@@ -3647,7 +3649,7 @@ if (typeof document !== 'undefined'){
     currentPuzzle = puzzleMode ? data.puzzle : null;
     playerColor = data.playerColor === 'b' ? 'b' : 'w';
     if (DIFFS[data.difficulty]) difficulty = data.difficulty;
-    orientation = data.orientation === 'b' ? 'b' : 'w';
+    orientation = 'w';
     if (puzzleMode){
       var made = 0;
       for (var i = 1; i < gameLog.length; i++)
@@ -3687,7 +3689,7 @@ if (typeof document !== 'undefined'){
   window.addEventListener('popstate', onPopState);
   if (!restoreProgress()){
     playerColor = 'w';
-    orientation = playerColor;
+    orientation = 'w';
     cursor = playerColor === 'w' ? 52 : 12;
     refresh();
     /* a fresh start always asks for a side first (after the welcome, if it shows) */
